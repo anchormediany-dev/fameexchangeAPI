@@ -11,6 +11,7 @@ import {
   //   resetPassword,
   resendOTP,
   forgotPassword,
+  resetPassword,
 } from "../controllers/auth.js";
 
 // Signup User
@@ -30,6 +31,6 @@ router.post("/verify-otp", auth_key_header, verifyOTP);
 router.post("/forget-password", auth_key_header, forgotPassword);
 
 // Reset Password
-// router.post("/reset-password", auth_key_header, resetPassword);
+router.post("/reset-password", auth_key_header, resetPassword);
 
 export default router;

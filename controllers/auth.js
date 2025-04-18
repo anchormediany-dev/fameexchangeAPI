@@ -20,7 +20,7 @@ const signup = async (req, res) => {
     data.OTP_code = Math.floor(1000 + Math.random() * 9000).toString();
 
     // ✅ Attempt to send OTP email first
-    const emailSent = await sendEmail(data, "otp", data.OTP_code);
+    const emailSent = await sendEmail(data.email, "otp", data.OTP_code);
 
     if (!emailSent) {
       return res.status(500).json({
@@ -172,7 +172,7 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ message: "User not found" });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 9000); // 6-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000); // 6-digit OTP
     const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes from now
 
     console.log("user", user);
@@ -180,13 +180,64 @@ export const forgotPassword = async (req, res) => {
     user.OTP_code = otp;
     user.otp_expiry = otpExpiry;
 
-    await sendEmail(user.email, otp.toString(), "reset-link");
+    await sendEmail(user.email, "resetlink", otp.toString());
     await user.save();
 
     res.status(200).json({
       message: "OTP sent to email",
       success: true,
     });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Reset Password API
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, new_password } = req.body;
+
+    // Check if all fields are provided
+    if (!email || !otp || !new_password) {
+      return res
+        .status(400)
+        .json({ message: "Email, OTP, and new password are required" });
+    }
+
+    // Find the user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    // Verify if the OTP matches and is not expired
+    if (user.OTP_code !== parseInt(otp)) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    if (user.otp_expiry < Date.now()) {
+      return res.status(400).json({ message: "OTP has expired" });
+    }
+
+    if (new_password.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password should be at least 6 characters long" });
+    }
+
+    // Reset the password
+    user.password = new_password; // Remember to hash the password before saving it
+    user.OTP_code = undefined; // Clear OTP data
+    user.otp_expiry = undefined; // Clear OTP expiry
+    user.is_verified = true; // Mark the user as verified if necessary
+
+    // Save the user with the new password
+    await user.save();
+
+    // Return success response
+    res
+      .status(200)
+      .json({ message: "Password reset successful", success: true });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
