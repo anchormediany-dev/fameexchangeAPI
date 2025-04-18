@@ -1,0 +1,279 @@
+import User from "../models/user.js";
+import mongoose from "mongoose";
+
+const userProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).lean();
+    if (!user) {
+      return res.status(400).json({ message: "user not found" });
+    }
+    delete user.password;
+    res.status(200).json({ user: user });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
+  }
+};
+
+// export const updateUserProfile = async (req, res) => {
+//   try {
+//     const userId = req.user._id;
+
+//     // Disallow updates to sensitive fields
+//     const disallowedFields = ["password", "otp_code", "_id", "email"];
+//     disallowedFields.forEach((field) => delete req.body[field]);
+
+//     const updatedUser = await User.findByIdAndUpdate(
+//       userId,
+//       { $set: req.body },
+//       { new: true, runValidators: true }
+//     ).select("-password -otp_code "); // remove sensitive fields from response
+
+//     if (!updatedUser) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     res.status(200).json({ success: true, user: updatedUser });
+//   } catch (error) {
+//     console.error("Update profile error:", error);
+//     res
+//       .status(500)
+//       .json({ message: "Internal server error", error: error.message });
+//   }
+// };
+
+export const updateUserProfile = async (req, res) => {
+  try {
+    const contentType = req.headers["content-type"];
+    if (!contentType || !contentType.includes("multipart/form-data")) {
+      return res.status(400).json({
+        success: false,
+        message: "Request must be of type multipart/form-data",
+      });
+    }
+
+    const userId = req.user._id;
+
+    const disallowedFields = ["password", "otp_code", "_id", "email"];
+    disallowedFields.forEach((field) => delete req.body[field]);
+
+    // 2. Construct update data
+    const updateData = { ...req.body };
+
+    // 3. Attach profile image if uploaded
+    if (req.file) {
+      updateData.profileImage = `/uploads/users/${req.file.filename}`;
+    }
+
+    // 4. Update user
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select("-password -otp_code");
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ success: true, user: updatedUser });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+//get all users
+export const getUserProfile = async (req, res) => {
+  try {
+    // const { userId } = req.params;
+
+    const userObjectId = new mongoose.Types.ObjectId(req.user._id);
+
+    const user = await User.aggregate([
+      { $match: { _id: userObjectId } },
+      {
+        $project: {
+          password: 0, // exclude password field
+          __v: 0, // exclude version key
+        },
+      },
+    ]);
+
+    if (!user || user.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    res.status(200).json({ success: true, user: user[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// get all users
+
+export const getAllUsers = async (req, res) => {
+  try {
+    if (req.user.usertype !== "ADMIN") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const users = await User.aggregate([
+      {
+        $project: {
+          user_id: "$_id",
+          full_name: 1,
+          email: 1,
+          usertype: 1,
+          is_active: 1,
+          created_at: "$createdAt",
+        },
+      },
+      { $sort: { created_at: -1 } },
+    ]);
+
+    res.status(200).json({ users });
+  } catch (err) {
+    console.error("Get all users error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+//Fetch own profile or any profile (admin only)
+
+// export const getUserProfile = async (req, res) => {
+//   try {
+//     const targetUserId = req.params.id;
+//     const loggedInUser = req.user;
+
+//     if (
+//       loggedInUser.usertype !== "admin" &&
+//       loggedInUser._id.toString() !== targetUserId
+//     ) {
+//       return res.status(403).json({ message: "Unauthorized access" });
+//     }
+
+//     const user = await User.aggregate([
+//       { $match: { _id: new mongoose.Types.ObjectId(targetUserId) } },
+//       {
+//         $project: {
+//           user_id: "$_id",
+//           full_name: 1,
+//           email: 1,
+//           usertype: 1,
+//           is_active: 1,
+//           datetime: "$createdAt",
+//           is_login_google: 1,
+//           is_login_facebook: 1,
+//           OTP_code: 1,
+//           is_rep_have: 1,
+//           rep_type: 1,
+//           socia_youtube: 1,
+//           social_twitter: 1,
+//           social_tiktok: 1,
+//           social_facebook: 1,
+//           social_insta: 1,
+//           social_snap: 1,
+//           token_brand_name: 1,
+//           token_name: 1,
+//           networth: 1,
+//         },
+//       },
+//     ]);
+
+//     if (!user.length) return res.status(404).json({ message: "User not found" });
+
+//     res.status(200).json(user[0]);
+//   } catch (err) {
+//     console.error("Get user profile error:", err);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+// GET /api/user/:id
+export const getUserById = async (req, res) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.params.id);
+
+    const user = await User.aggregate([
+      { $match: { _id: userId } },
+      {
+        $project: {
+          password: 0,
+          otp_code: 0,
+        },
+      },
+    ]);
+
+    if (!user.length) return res.status(404).json({ error: "User not found" });
+
+    res.status(200).json(user[0]);
+  } catch (err) {
+    console.error("Error getting user:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// PUT /api/user/:id
+export const updateUserById = async (req, res) => {
+  try {
+    const allowedFields = [
+      "name",
+      "usertype",
+      "is_active",
+      "rep_type",
+      "token_brand_name",
+      "networth",
+    ];
+    const updateData = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    });
+
+    const result = await User.updateOne(
+      { _id: req.params.id },
+      { $set: updateData }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found or no changes made" });
+    }
+
+    res.status(200).json({ success: true, updatedFields: updateData });
+  } catch (err) {
+    console.error("Error updating user:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// DELETE /api/user/:id (Soft Delete)
+export const deleteUserById = async (req, res) => {
+  try {
+    const result = await User.updateOne(
+      { _id: req.params.id },
+      { $set: { is_active: false } }
+    );
+
+    if (result.modifiedCount === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found or already deleted" });
+    }
+
+    res.status(200).json({ success: true, message: "User deleted" });
+  } catch (err) {
+    console.error("Error deleting user:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
