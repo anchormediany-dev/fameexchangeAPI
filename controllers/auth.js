@@ -195,10 +195,10 @@ export const forgotPassword = async (req, res) => {
 // Reset Password API
 export const resetPassword = async (req, res) => {
   try {
-    const { email, otp, new_password } = req.body;
-
+    const { email, otp, password } = req.body;
+    console.log(req.body);
     // Check if all fields are provided
-    if (!email || !otp || !new_password) {
+    if (!email || !otp || !password) {
       return res
         .status(400)
         .json({ message: "Email, OTP, and new password are required" });
@@ -211,7 +211,7 @@ export const resetPassword = async (req, res) => {
     }
 
     // Verify if the OTP matches and is not expired
-    if (user.OTP_code !== parseInt(otp)) {
+    if (user.OTP_code !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
@@ -219,14 +219,14 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ message: "OTP has expired" });
     }
 
-    if (new_password.length < 6) {
+    if (password.length < 6) {
       return res
         .status(400)
         .json({ message: "Password should be at least 6 characters long" });
     }
 
     // Reset the password
-    user.password = new_password; // Remember to hash the password before saving it
+    user.password = password; // Remember to hash the password before saving it
     user.OTP_code = undefined; // Clear OTP data
     user.otp_expiry = undefined; // Clear OTP expiry
     user.is_verified = true; // Mark the user as verified if necessary
