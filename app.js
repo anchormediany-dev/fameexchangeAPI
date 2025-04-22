@@ -7,7 +7,9 @@ dotenv.config();
 import userRoutes from "./routes/user.js";
 import authRoutes from "./routes/auth.js";
 import userDocumentRoutes from "./routes/userDocuments.js";
+import socialMediaRoutes from "./routes/socialMediaRoutes.js";
 import keysRoutes from "./routes/keys.js";
+import CryptoTokenRoutes from "./routes/tokenRoutes.js";
 import connectToDatabase from "./config/db.js";
 
 const app = express();
@@ -23,6 +25,8 @@ connectToDatabase();
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/user_documents", userDocumentRoutes);
+app.use("/api/social-media", socialMediaRoutes);
+app.use("/api/crypto_token", CryptoTokenRoutes);
 app.use("/api/keys", keysRoutes);
 app.use("/uploads", express.static("uploads"));
 
