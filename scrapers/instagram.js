@@ -1,36 +1,36 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 
-export const scrapeInstagramProfile = async (profileUrl) => {
-  try {
-    const { data } = await axios.get(profileUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-      },
-    });
+// export const scrapeInstagramProfile = async (profileUrl) => {
+//   try {
+//     const { data } = await axios.get(profileUrl, {
+//       headers: {
+//         "User-Agent": "Mozilla/5.0",
+//       },
+//     });
 
-    const $ = cheerio.load(data);
-    const script = $('script[type="application/ld+json"]').html();
+//     const $ = cheerio.load(data);
+//     const script = $('script[type="application/ld+json"]').html();
 
-    if (!script) {
-      throw new Error("Profile metadata not found");
-    }
+//     if (!script) {
+//       throw new Error("Profile metadata not found");
+//     }
 
-    const metadata = JSON.parse(script);
+//     const metadata = JSON.parse(script);
 
-    return {
-      username: profileUrl.split("/").filter(Boolean).pop(),
-      name: metadata.name,
-      bio: metadata.description,
-      profilePicture: metadata.image,
-      followersCount:
-        metadata.mainEntityofPage.interactionStatistic.userInteractionCount,
-    };
-  } catch (error) {
-    console.error("Scraping error:", error.message);
-    throw error;
-  }
-};
+//     return {
+//       username: profileUrl.split("/").filter(Boolean).pop(),
+//       name: metadata.name,
+//       bio: metadata.description,
+//       profilePicture: metadata.image,
+//       followersCount:
+//         metadata.mainEntityofPage.interactionStatistic.userInteractionCount,
+//     };
+//   } catch (error) {
+//     console.error("Scraping error:", error.message);
+//     throw error;
+//   }
+// };
 
 // =====================================================================================
 
@@ -71,34 +71,72 @@ export const scrapeInstagramProfile = async (profileUrl) => {
 //   }
 // }
 
-// export default async function scrapeInstagram(page, url) {
-//   try {
-//     await page.goto(url, {
-//       waitUntil: "networkidle2",
-//       timeout: 30000,
-//     });
+export default async function scrapeInstagram(page, url) {
+  try {
+    await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
 
-//     // Wait for followers count to be visible
-//     await page.waitForSelector("ul li span", { timeout: 10000 });
+    // Wait for the profile header to load
+    await page.waitForSelector("header section", { timeout: 15000 });
 
-//     const followers = await page.evaluate(() => {
-//       const spans = document.querySelectorAll("ul li span");
-//       if (spans.length > 0) {
-//         return spans[0].getAttribute("title") || spans[0].textContent;
-//       }
-//       return null;
-//     });
+    // Extract follower count (supports "M", "K", etc.)
+    const followersText = await page.evaluate(() => {
+      // Try meta tag first (more reliable)
+      const metaElement = document.querySelector(
+        'meta[property="og:description"]'
+      );
+      if (metaElement) {
+        const content = metaElement.getAttribute("content");
+        const followersMatch = content.match(/([\d,.]+[MK]?)\s+Followers/);
+        if (followersMatch) return followersMatch[1];
+      }
 
-//     return {
-//       platform: "Instagram",
-//       url,
-//       followers: followers || "Not found",
-//     };
-//   } catch (err) {
-//     return {
-//       platform: "Instagram",
-//       url,
-//       error: err.message,
-//     };
-//   }
-// }
+      // Fallback to direct selector
+      const followerElements = document.querySelectorAll(
+        "header section ul li"
+      );
+      if (followerElements.length >= 3) {
+        const followerElement = followerElements[1]; // Followers is usually the 2nd <li>
+        const followerText =
+          followerElement.querySelector("a span")?.textContent ||
+          followerElement.querySelector("span")?.textContent;
+        return followerText?.trim();
+      }
+      return null;
+    });
+
+    // Convert "652M" → 652000000, "1.2K" → 1200, etc.
+    const parseFollowers = (text) => {
+      if (!text) return null;
+
+      // Remove commas (e.g., "1,000" → "1000")
+      const cleaned = text.replace(/,/g, "");
+
+      // Check for "M" (millions), "K" (thousands)
+      if (cleaned.includes("M")) {
+        return Math.round(parseFloat(cleaned) * 1000000);
+      } else if (cleaned.includes("K")) {
+        return Math.round(parseFloat(cleaned) * 1000);
+      } else if (!isNaN(parseFloat(cleaned))) {
+        return parseFloat(cleaned);
+      }
+      return null;
+    };
+
+    const followers = parseFollowers(followersText);
+
+    return {
+      platform: "Instagram",
+      url,
+      followers: followers || "Not found",
+    };
+  } catch (err) {
+    return {
+      platform: "Instagram",
+      url,
+      error: err.message,
+    };
+  }
+}

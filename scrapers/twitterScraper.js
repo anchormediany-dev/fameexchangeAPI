@@ -17,7 +17,7 @@ export default async function getTwitterFollowerCount(username) {
     console.log(`Navigating to @${username}'s profile...`);
     await page.goto(`https://twitter.com/${username}`, {
       waitUntil: "networkidle2",
-      timeout: 60000,
+      timeout: 100000,
     });
 
     // Debug: Save full HTML for inspection
@@ -27,7 +27,7 @@ export default async function getTwitterFollowerCount(username) {
 
     // Wait for profile to load
     await page.waitForSelector('div[data-testid="UserName"]', {
-      timeout: 15000,
+      timeout: 300000,
     });
 
     // Debug: Find all potential follower count elements

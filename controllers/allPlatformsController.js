@@ -7,61 +7,33 @@ import { getYoutubeSubscribers } from "./socialMediaControllers/youtubeControlle
 
 const platformHandlers = {
   youtube: { fn: getYoutubeSubscribers, key: "subscribers" },
-  twitter: { fn: gettwitterFollower, key: "followers" },
+  // twitter: { fn: gettwitterFollower, key: "followers" },
   instagram: { fn: getInstagramFollowers, key: "followers" },
   facebook: { fn: getFacebookFollowers, key: "followers" },
   tiktok: { fn: getTiktokFollowers, key: "followers" },
   snapchat: { fn: getSnapchatSubscribers, key: "subscribers" },
 };
 
-export const getAllPlatformsData = async (req, res) => {
+export const getAllPlatformsData = async (urls) => {
   try {
-    const { urls } = req.body;
-
-    if (!urls || typeof urls !== "object") {
-      return res.status(400).json({ error: "URLs object required" });
-    }
-
-    // Platform configuration
-    const platformConfig = {
-      youtube: {
-        fn: getYoutubeSubscribers,
-        key: "subscribers",
-        validate: (url) => url.includes("youtube.com"),
-      },
-      // twitter: {
-      //   fn: getTwitterFollowers,
-      //   key: 'followers',
-      //   validate: url => url.includes('twitter.com')
-      // },
-      instagram: {
-        fn: getInstagramFollowers,
-        key: "followers",
-        validate: (url) => url.includes("instagram.com"),
-      },
-      facebook: {
-        fn: getFacebookFollowers,
-        key: "followers",
-        validate: (url) => url.includes("facebook.com"),
-      },
-      tiktok: {
-        fn: getTiktokFollowers,
-        key: "followers",
-        validate: (url) => url.includes("tiktok.com"),
-      },
-      snapchat: {
-        fn: getSnapchatSubscribers,
-        key: "subscribers",
-        validate: (url) => url.includes("snapchat.com/add/"),
-      },
-    };
-
-    // Prepare requests
-    const requests = Object.entries(platformConfig)
-      .filter(([platform, _]) => urls[platform])
-      .map(async ([platform, config]) => {
+    const requests = Object.entries(platformHandlers)
+      .filter(([platform]) => urls[platform])
+      .map(async ([platform, { fn, key }]) => {
         try {
-          // Create mock Express objects
+          let responseData;
+
+          // Create mock res
+          const mockRes = {
+            json: (data) => {
+              responseData = data;
+            },
+            status: () => ({
+              json: (data) => {
+                responseData = data;
+              },
+            }),
+          };
+
           const mockReq = {
             body: { url: urls[platform] },
             params:
@@ -70,23 +42,13 @@ export const getAllPlatformsData = async (req, res) => {
                 : {},
           };
 
-          let responseData;
-          const mockRes = {
-            json: (data) => {
-              responseData = data;
-            },
-            status: () => mockRes,
-          };
-
-          // Execute the controller function
-          await config.fn(mockReq, mockRes);
+          await fn(mockReq, mockRes);
 
           return {
             platform,
             url: urls[platform],
             status: "success",
-            [config.key]:
-              responseData[config.key] || responseData.formattedCount || 0,
+            [key]: responseData?.[key] || responseData?.formattedCount || 0,
           };
         } catch (error) {
           return {
@@ -99,27 +61,18 @@ export const getAllPlatformsData = async (req, res) => {
       });
 
     const results = await Promise.all(requests);
-    console.log("results", results);
-    const totalFollowers = results.reduce(
-      (sum, result) =>
-        result.status === "success"
-          ? sum + (result[platformConfig[result.platform].key] || 0)
-          : sum,
-      0
-    );
 
-    res.json({
-      success: true,
+    const totalFollowers = results.reduce((sum, platform) => {
+      const followers = platform.followers || platform.subscribers || 0;
+      return sum + followers;
+    }, 0);
+
+    return {
       totalFollowers,
-      netWorth: totalFollowers,
-      currency: "USD",
+      netWorth: totalFollowers, // customize multiplier if needed
       platforms: results,
-      timestamp: new Date().toISOString(),
-    });
+    };
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    throw new Error(`getAllPlatformsData failed: ${error.message}`);
   }
 };

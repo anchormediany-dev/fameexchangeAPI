@@ -62,7 +62,7 @@ export const verifyOrRejectUserDocument = async (req, res) => {
     const isReject = action === "REJECT";
 
     if (isApprove) {
-      return res.status(200).json({ message: "Already VERIFIED " });
+      return res.status(200).json({ message: "Successfully VERIFIED " });
     }
     if (!isApprove && !isReject) {
       return res

@@ -51,6 +51,11 @@ const userSchema = new mongoose.Schema(
     token_name: { type: String },
     networth: { type: String },
     lastlogin: { type: String },
+    category: { type: String },
+    subcategory: { type: String },
+    isDeleted: {
+      type: Boolean,
+    },
   },
   { timestamps: true }
 );

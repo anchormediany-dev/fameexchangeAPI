@@ -2,7 +2,7 @@ export default async function scrapeTiktok(page, url) {
   try {
     await page.goto(url, {
       waitUntil: "networkidle2",
-      timeout: 30000,
+      timeout: 100000,
     });
 
     await page.waitForSelector('strong[data-e2e="followers-count"]', {

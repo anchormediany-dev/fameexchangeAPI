@@ -1,6 +1,6 @@
 export default async function scrapeFacebookFollowers(page, url) {
   try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 100000 });
 
     // Wait for the followers element to load
     await page.waitForSelector('[href*="followers"]', { timeout: 15000 });
