@@ -54,6 +54,7 @@ export const verifyOrRejectUserDocument = async (req, res) => {
     const { action, rejectionReason = "" } = req.body;
 
     const document = await UserDocument.findById(documentId);
+    console.log("document status check", document);
     if (!document) {
       return res.status(404).json({ message: "Document not found" });
     }
@@ -61,8 +62,8 @@ export const verifyOrRejectUserDocument = async (req, res) => {
     const isApprove = action === "VERIFIED";
     const isReject = action === "REJECT";
 
-    if (isApprove) {
-      return res.status(200).json({ message: "Successfully VERIFIED " });
+    if (document.status === "VERIFIED") {
+      return res.status(200).json({ message: "Already VERIFIED " });
     }
     if (!isApprove && !isReject) {
       return res
