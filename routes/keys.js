@@ -9,7 +9,11 @@ import { create, getAll, deleteKey } from "../controllers/keys.js";
 router.post("/create", auth_token, auth_admin, create);
 
 // Get all Keys (GET)
-router.get("/get-all", auth_key_header, auth_token, auth_admin, getAll);
+router.get(
+  "/get",
+  //  auth_key_header, auth_admin,
+  getAll
+);
 
 // Delete Key by ID (DELETE)
 router.delete(

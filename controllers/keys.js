@@ -50,4 +50,29 @@ const deleteKey = async (req, res) => {
   }
 };
 
-export { create, getAll, deleteKey };
+const createInitialKeyIfNotExists = async () => {
+  const predefinedKey = "683991a1d36437b6396cf2aa"; // or generate dynamically
+  const existingKey = await Keys.findOne({ secret_key: predefinedKey });
+
+  if (!existingKey) {
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 1); // 1 year from now
+
+    const newKey = new Keys({
+      secret_key: predefinedKey,
+      title: "web",
+      createdBy: "system", // optional fields
+      type: "initial",
+      purpose: "environment startup key",
+      createdAt: new Date(),
+      expiry_date: expiryDate,
+    });
+
+    await newKey.save();
+    console.log("✅ Initial key inserted into DB");
+  } else {
+    console.log("✅ Initial key already exists in DB");
+  }
+};
+
+export { create, getAll, deleteKey, createInitialKeyIfNotExists };

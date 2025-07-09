@@ -12,6 +12,7 @@ import keysRoutes from "./routes/keys.js";
 import CryptoTokenRoutes from "./routes/tokenRoutes.js";
 import NetworthRoutes from "./routes/networth.js";
 import connectToDatabase from "./config/db.js";
+import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
 app.use(cors());
@@ -21,7 +22,7 @@ app.use(morgan("dev"));
 
 // Connect DB
 connectToDatabase();
-
+createInitialKeyIfNotExists();
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
