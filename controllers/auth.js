@@ -8,6 +8,13 @@ const signup = async (req, res) => {
     // ✅ Validate Request
     const data = signupSchema.parse(req.body);
 
+    // ✅ Check required terms
+    if (!req.body.is_over_18 || !req.body.agreed_terms) {
+      return res.status(400).json({
+        success: false,
+        error: "You must be over 18 and agree to the terms and conditions.",
+      });
+    }
     // ✅ Check if user exists
     const userExist = await User.findOne({ email: data.email });
     if (userExist) {
@@ -73,12 +80,6 @@ const login = async (req, res) => {
       res.status(200).json({
         message: "Login Successful",
         token: await userExist.generateToken(),
-        userId: userExist._id.toString(),
-        createdAt: userExist.createdAt,
-        email: userExist.email,
-        is_verified: userExist.is_verified,
-        is_active: userExist.is_active,
-        role: userExist.role,
       });
     } else {
       res.status(401).json({ message: "Invalid email or password" });

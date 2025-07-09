@@ -51,7 +51,7 @@ const deleteKey = async (req, res) => {
 };
 
 const createInitialKeyIfNotExists = async () => {
-  const predefinedKey = "683991a1d36437b6396cf2aa"; // or generate dynamically
+  const predefinedKey = "6800d79f1b5720e55168bc4f"; // or generate dynamically
   const existingKey = await Keys.findOne({ secret_key: predefinedKey });
 
   if (!existingKey) {

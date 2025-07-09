@@ -9,6 +9,7 @@ import authRoutes from "./routes/auth.js";
 import userDocumentRoutes from "./routes/userDocuments.js";
 import socialMediaRoutes from "./routes/socialMediaRoutes.js";
 import keysRoutes from "./routes/keys.js";
+import eventRoutes from "./routes/eventRoutes.js";
 import CryptoTokenRoutes from "./routes/tokenRoutes.js";
 import NetworthRoutes from "./routes/networth.js";
 import connectToDatabase from "./config/db.js";
@@ -22,7 +23,9 @@ app.use(morgan("dev"));
 
 // Connect DB
 connectToDatabase();
-createInitialKeyIfNotExists();
+createInitialKeyIfNotExists()
+  .then(() => console.log("Initial key check completed"))
+  .catch((err) => console.error("Error initializing key:", err));
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
@@ -31,6 +34,7 @@ app.use("/api/social-media", socialMediaRoutes);
 app.use("/api/crypto_token", CryptoTokenRoutes);
 app.use("/api/networth", NetworthRoutes);
 app.use("/api/keys", keysRoutes);
+app.use("/api/events", eventRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // Health Check Endpoint
