@@ -21,9 +21,9 @@ const uploadFields = upload.fields([
 ]);
 
 router.post("/", uploadFields, auth_key_header, auth_token, createEvent);
-router.get("/", getAllEvents);
-router.get("/:id", getEventById);
-router.put("/:id", updateEvent);
-router.delete("/:id", deleteEvent);
+router.get("/", auth_key_header, auth_token, getAllEvents);
+router.get("/:id", auth_key_header, auth_token, getEventById);
+router.put("/:id", uploadFields, auth_key_header, auth_token, updateEvent);
+router.delete("/:id", auth_key_header, auth_token, deleteEvent);
 
 export default router;
