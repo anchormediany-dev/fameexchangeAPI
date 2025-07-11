@@ -13,7 +13,9 @@ import eventRoutes from "./routes/eventRoutes.js";
 import CryptoTokenRoutes from "./routes/tokenRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import NetworthRoutes from "./routes/networth.js";
+import friendRoutes from "./routes/friendRoutes.js";
 import connectToDatabase from "./config/db.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -37,6 +39,8 @@ app.use("/api/networth", NetworthRoutes);
 app.use("/api/keys", keysRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/friends", friendRoutes);
+app.use("/api/reviews", reviewRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // Health Check Endpoint
