@@ -33,6 +33,7 @@ const userSchema = new mongoose.Schema(
 
     is_rep_have: { type: Boolean, default: false },
     rep_type: { type: String },
+    // talents: [{ type: String }],
     selected_reps: {
       type: [String],
       enum: ["business_manager", "attorney", "record_label", "agent"],
@@ -67,10 +68,12 @@ const userSchema = new mongoose.Schema(
     social_insta: { type: String },
     social_snap: { type: String },
 
-    talent: {
-      category: { type: String },
-      subcategory: { type: String },
-    },
+    talent: [
+      {
+        category: { type: String, required: true },
+        subcategory: [{ type: String, required: true }],
+      },
+    ],
 
     token_brand_name: { type: String },
     token_name: { type: String },

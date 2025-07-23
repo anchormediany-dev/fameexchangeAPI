@@ -147,7 +147,7 @@ const resendOTP = async (req, res) => {
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
 
     // Store OTP in user record
-    user.otp_code = otp;
+    user.OTP_code = otp;
     await user.save();
 
     const emailSent = await sendEmail(user.email, "otp", otp.toString()); // assuming sendEmail(user, code)

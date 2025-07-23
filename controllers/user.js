@@ -45,6 +45,7 @@ const userProfile = async (req, res) => {
 
 export const updateUserProfile = async (req, res) => {
   try {
+    // 1. Ensure request is multipart/form-data
     const contentType = req.headers["content-type"];
     if (!contentType || !contentType.includes("multipart/form-data")) {
       return res.status(400).json({
@@ -55,29 +56,52 @@ export const updateUserProfile = async (req, res) => {
 
     const userId = req.user._id;
 
+    // 2. Disallow certain fields from being updated
     const disallowedFields = ["password", "otp_code", "_id", "email"];
     disallowedFields.forEach((field) => delete req.body[field]);
 
-    // 2. Construct update data
+    // 3. Parse JSON fields that may come as strings from form-data
+    const fieldsToParse = ["talent", "selected_reps", "representation"];
+    fieldsToParse.forEach((field) => {
+      if (req.body[field] && typeof req.body[field] === "string") {
+        try {
+          req.body[field] = JSON.parse(req.body[field]);
+        } catch (err) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid JSON format in field: ${field}`,
+          });
+        }
+      }
+    });
+
+    // 4. Construct update object
     const updateData = { ...req.body };
 
-    // 3. Attach profile image if uploaded
+    // 5. Attach uploaded image if present
     if (req.file) {
-      updateData.profileImage = `/uploads/users/${req.file.filename}`;
+      updateData.image = `/uploads/users/${req.file.filename}`;
     }
 
-    // 4. Update user
+    // 6. Perform update
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updateData },
       { new: true, runValidators: true }
-    ).select("-password -otp_code");
+    ).select("-password -OTP_code");
 
     if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    return res.status(200).json({ success: true, user: updatedUser });
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
     console.error("Update profile error:", error);
     return res.status(500).json({
