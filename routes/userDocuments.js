@@ -3,6 +3,8 @@ import express from "express";
 import auth_admin from "../middleware/auth_admin.js";
 import {
   deleteRejectedUserDocument,
+  getAllUserDocuments,
+  getUserDocumentsByUserId,
   uploadUserDocuments,
   verifyOrRejectUserDocument,
 } from "../controllers/userDocuments.js";
@@ -27,6 +29,8 @@ router.put(
   verifyOrRejectUserDocument
 );
 
+router.get("/", getUserDocumentsByUserId);
+router.get("/all-user-documents", getAllUserDocuments);
 //if document reject then delete the previous uplaoded documents
 router.delete(
   "/delete/:documentId",

@@ -14,8 +14,11 @@ import CryptoTokenRoutes from "./routes/tokenRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import NetworthRoutes from "./routes/networth.js";
 import friendRoutes from "./routes/friendRoutes.js";
+import fanRequestRoutes from "./routes/fanRequestRoutes.js";
+import talentConfirmationRoutes from "./routes/talentConfirmationRoutes.js";
 import connectToDatabase from "./config/db.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import contactRoutes from "./routes/contactRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -41,6 +44,9 @@ app.use("/api/events", eventRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/contact", contactRoutes);
+app.use("/api/fan-request", fanRequestRoutes);
+app.use("/api/talent-confirmation", talentConfirmationRoutes);
 app.use("/uploads", express.static("uploads"));
 
 // Health Check Endpoint

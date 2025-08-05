@@ -11,13 +11,14 @@ import {
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
+import upload from "../utils/multer_multiple_file_upload.js";
 
 // User Profile
 router.post(
   "/update-user-profile",
   auth_key_header,
   auth_token,
-  uploadSingleFile.fields([{ name: "image", maxCount: 1 }]),
+  upload.array("images"),
   updateUserProfile
 );
 

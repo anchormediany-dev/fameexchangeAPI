@@ -1,11 +1,10 @@
-import Event from "../models/EventModel.js";
+import Event from "../models/eventModel.js";
 import User from "../models/user.js";
 
 // CREATE
 export const createEvent = async (req, res) => {
   try {
     const {
-      userId,
       datetime,
       title,
       summary,
@@ -23,12 +22,57 @@ export const createEvent = async (req, res) => {
       discount_codes,
       event_coordinates,
       is_featured,
+      prefrence,
     } = req.body;
     // const event = new Event(req.body);
+
+    const missingFields = [];
+    if (!datetime) missingFields.push("datetime");
+    if (!title) missingFields.push("title");
+    if (!summary) missingFields.push("summary");
+    if (!details) missingFields.push("details");
+    if (!event_type) missingFields.push("event_type");
+    if (!status) missingFields.push("status");
+    if (!category) missingFields.push("category");
+    if (!location) missingFields.push("location");
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Missing required fields: ${missingFields.join(", ")}`,
+      });
+    }
     const LoginUser = req.user._id;
-    const user = await User.findById(req.body.userId);
+    const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // ⏰ Check that datetime is today or in the future
+    const eventDate = new Date(datetime);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // reset to start of day
+    const now = new Date();
+    if (isNaN(eventDate.getTime())) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid datetime format" });
+    }
+
+    // Compare full datetime (date + time)
+    if (eventDate.getTime() <= now.getTime()) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Event date and time must be in the future (not in the past or now)",
+      });
+    }
+
+    if (eventDate < today) {
+      return res.status(400).json({
+        success: false,
+        error: "Event date must be today or in the future",
+      });
     }
     // Parse JSON strings
     let parsedDiscountCodes = [];
@@ -67,7 +111,7 @@ export const createEvent = async (req, res) => {
     // console.log("req.files?.event_images:", req.files?.event_images);
 
     const event = new Event({
-      userId,
+      userId: user._id,
       datetime,
       addedby: LoginUser.role,
       title,
@@ -81,6 +125,7 @@ export const createEvent = async (req, res) => {
       phone,
       website,
       organizername,
+      prefrence,
       logo,
       event_cover: eventcover,
       event_images: eventimages,
@@ -124,7 +169,6 @@ export const getEventById = async (req, res) => {
 export const updateEvent = async (req, res) => {
   try {
     const {
-      userId,
       datetime,
       title,
       summary,
@@ -145,14 +189,14 @@ export const updateEvent = async (req, res) => {
     } = req.body;
 
     const eventId = req.params.id;
-    const LoginUser = req.user;
+    const LoginUser = req.user._id;
 
     const event = await Event.findById(eventId);
     if (!event) {
       return res.status(404).json({ success: false, error: "Event not found" });
     }
 
-    const user = await User.findById(userId);
+    const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" });
     }
@@ -189,7 +233,7 @@ export const updateEvent = async (req, res) => {
       : event.eventimages;
 
     // ✅ Update fields
-    event.userId = userId || event.userId;
+    event.userId = req?.user?._id || event.userId;
     event.datetime = datetime || event.datetime;
     event.addedby = LoginUser.role || event.addedby;
     event.title = title || event.title;
@@ -221,6 +265,28 @@ export const updateEvent = async (req, res) => {
   } catch (err) {
     console.error("❌ Update error:", err);
     res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+//get featured events
+export const getFeaturedUpcomingEvents = async (req, res) => {
+  try {
+    const now = new Date();
+
+    const events = await Event.find({
+      is_featured: true,
+      datetime: { $gt: now },
+      status: "active", // optional but usually preferred
+    })
+      .sort({ datetime: 1 }) // soonest first
+      .limit(10); // optional: limit results
+
+    return res.status(200).json({ success: true, data: events });
+  } catch (error) {
+    console.error("Error fetching featured events:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Internal server error" });
   }
 };
 

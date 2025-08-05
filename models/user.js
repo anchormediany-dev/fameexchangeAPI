@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
 
-    image: { type: String, default: "" },
+    images: [{ type: String, default: "" }],
 
     role: {
       type: String,
@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema(
 
     OTP_code: { type: String },
     is_verified: { type: Boolean, default: false },
-
+    KYC_Verified: { type: Boolean, default: false },
     is_rep_have: { type: Boolean, default: false },
     rep_type: { type: String },
     // talents: [{ type: String }],
@@ -118,6 +118,7 @@ userSchema.methods.generateToken = async function () {
       lastName: this.lastName,
       is_verified: this.is_verified,
       isAdmin: this.isAdmin,
+      KYC_Verified: this.KYC_Verified,
     };
     return jwt.sign(payload, process.env.JWT_SECRET_KEY, { expiresIn: "1d" });
   } catch (error) {

@@ -7,6 +7,9 @@ const eventSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    users: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    ],
     datetime: { type: Date, required: true },
     addedBy: { type: String },
 
@@ -22,7 +25,7 @@ const eventSchema = new mongoose.Schema(
     address: { type: String },
     phone: { type: String },
     website: { type: String },
-
+    prefrence: { type: String },
     organizer_name: { type: String },
     logo: { type: String }, // image URL or path
     event_cover: { type: String }, // image URL or path

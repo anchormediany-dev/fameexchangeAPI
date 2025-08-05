@@ -4,7 +4,6 @@ import { getAllPlatformsData } from "./allPlatformsController.js";
 export const saveNetworthData = async (req, res) => {
   try {
     const {
-      userId,
       fullName,
       tokenBrandName,
       tokenName,
@@ -16,6 +15,7 @@ export const saveNetworthData = async (req, res) => {
       snapchat,
     } = req.body;
 
+    const userId = req.user._id;
     if (!userId || !fullName) {
       return res
         .status(400)
@@ -46,6 +46,18 @@ export const saveNetworthData = async (req, res) => {
     res.status(201).json({ success: true, data: newEntry });
   } catch (error) {
     console.error("Networth Save Error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const getNetwothData = async (req, res) => {
+  const userId = req.user._id;
+  try {
+    const data = await Networth.findOne({ userId });
+    console.log(data);
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    console.log(error);
     res.status(500).json({ success: false, error: error.message });
   }
 };

@@ -88,8 +88,8 @@ export const verifyOrRejectUserDocument = async (req, res) => {
 
     await User.findByIdAndUpdate(document.userId, {
       is_verified: isApprove,
+      KYC_Verified: true,
     });
-    console.log("adminId", adminId);
     return res.status(200).json({
       message: `Document ${isApprove ? "verified" : "rejected"} successfully.`,
       document,
@@ -100,6 +100,60 @@ export const verifyOrRejectUserDocument = async (req, res) => {
   }
 };
 
+export const getUserDocumentsByUserId = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
+    }
+
+    const userDoc = await UserDocument.findOne({ userId });
+
+    if (!userDoc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No documents found for this user" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      documents: userDoc.documents,
+    });
+  } catch (error) {
+    console.error("Get user documents error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const getAllUserDocuments = async (req, res) => {
+  try {
+    const documents = await UserDocument.find()
+      .populate("userId", "name email userRole") // Include user details
+      .lean();
+
+    if (!documents || documents.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No documents found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: documents,
+    });
+  } catch (error) {
+    console.error("Get all user documents error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
 //delete the specific document
 export const deleteRejectedUserDocument = async (req, res) => {
   try {

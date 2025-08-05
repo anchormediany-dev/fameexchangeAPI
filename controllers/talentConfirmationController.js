@@ -1,0 +1,288 @@
+import FanInverseRequestModel from "../models/FanInverseRequestModel.js";
+import Notification from "../models/notificationModel.js";
+import TalentConfirmation from "../models/talentConfirmationModel.js";
+import User from "../models/user.js";
+import { sendMail } from "../utils/mailer.js";
+
+export const confirmRequest = async (req, res) => {
+  try {
+    const { requestId, confirmedDate, time, location, fanName, status } =
+      req.body;
+
+    const talentId = req.user._id;
+
+    const talentUser = await User.findById({ _id: talentId });
+
+    if (!talentUser) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Talent User not found" });
+    }
+    if (talentUser.role !== "TALENT") {
+      return res
+        .status(400)
+        .json({ success: false, error: "Talent not exists" });
+    }
+    console.log("talentUser talentUser", talentUser);
+    if (
+      !requestId ||
+      !confirmedDate ||
+      !time ||
+      !location ||
+      !fanName ||
+      !status
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Missing required fields: fanRequestId, confirmedDate, time, location, fanName, status",
+      });
+    }
+
+    // Find fan user
+    const fanUser = await User.findOne({ name: fanName });
+    if (!fanUser || fanUser.role !== "FAN") {
+      return res.status(400).json({
+        success: false,
+        error: "Fan with the provided name does not exist or is not a FAN",
+      });
+    }
+
+    // Validate that the request exists
+    const fanRequest = await FanInverseRequestModel.findById(requestId);
+    if (!fanRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "Fan request not found",
+      });
+    }
+
+    // console.log("fanRequest", fanRequest);
+    // console.log("fanUser", fanUser);
+    // const fanUser = await User.findById(fanRequest.fanId);
+    const data = {
+      talentId: talentId,
+      ...req.body,
+    };
+    const confirmation = await TalentConfirmation.create(data);
+    fanRequest.status = "accepted";
+    await fanRequest.save();
+    // console.log("fanUser", fanUser._id);
+    // console.log("talentId", talentId);
+    await Notification.create([
+      {
+        userId: fanUser._id,
+        description: `Your session was confirmed by ${talentUser.name} for ${confirmedDate} at ${time}.`,
+        category: "session",
+        referenceModel: "TalentConfirmation",
+        referenceId: confirmation._id,
+      },
+      {
+        userId: talentId,
+        description: `You confirmed a session with ${fanUser.name}.`,
+        category: "session",
+        referenceModel: "TalentConfirmation",
+        referenceId: confirmation._id,
+      },
+    ]);
+
+    await sendMail(
+      fanUser.email,
+      "Session Confirmed",
+      `
+        <p>Hi ${fanUser.name},</p>
+        <p>Your session with ${talentUser.name} has been <strong>confirmed</strong>.</p>
+        <p><strong>Date:</strong> ${confirmedDate}<br><strong>Time:</strong> ${time}<br><strong>Location:</strong> ${location}</p>
+      `
+    );
+
+    res.status(201).json({ success: true, data: confirmation });
+  } catch (error) {
+    console.error("Error confirming request:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+// GET ALL
+export const getConfirmations = async (req, res) => {
+  try {
+    const confirmations = await TalentConfirmation.find()
+      .populate("requestId")
+      .populate("talentId");
+    res.json({ success: true, data: confirmations });
+  } catch (error) {
+    console.error("Fetch Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// GET BY ID
+export const getConfirmationById = async (req, res) => {
+  try {
+    const confirmation = await TalentConfirmation.findById(req.params.id)
+      .populate("requestId")
+      .populate("talentId");
+    if (!confirmation) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent confirmation not found" });
+    }
+    res.json({ success: true, data: confirmation });
+  } catch (error) {
+    console.error("Fetch by ID Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// UPDATE
+export const updateConfirmation = async (req, res) => {
+  try {
+    const updated = await TalentConfirmation.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+    if (!updated) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent confirmation not found" });
+    }
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Update Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// DELETE
+export const deleteConfirmation = async (req, res) => {
+  try {
+    const deleted = await TalentConfirmation.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent confirmation not found" });
+    }
+    res.json({
+      success: true,
+      message: "Talent confirmation deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const rescheduleTalentConfirmation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { confirmedDate, time, location } = req.body;
+
+    const talentId = req?.user?._id;
+
+    if (!talentId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing talent user details" });
+    }
+
+    const talentUser = await User.findById(talentId);
+    if (!talentUser || talentUser.role !== "TALENT") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only talents can perform this action.",
+      });
+    }
+
+    if (!confirmedDate || !time || !location) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing date, time, or location for reschedule.",
+      });
+    }
+
+    const newDateTime = new Date(`${confirmedDate}T${time}`);
+    const now = new Date();
+    if (newDateTime < now) {
+      return res.status(400).json({
+        success: false,
+        message: "New date and time must be today or in the future.",
+      });
+    }
+
+    const confirmation = await TalentConfirmation.findById(id);
+    if (!confirmation) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Confirmation not found" });
+    }
+
+    const fanRequest = await FanInverseRequestModel.findById(
+      confirmation.requestId
+    );
+    if (!fanRequest) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Associated fan request not found" });
+    }
+
+    const fanUser = await User.findById(fanRequest.fanId);
+    if (!fanUser) {
+      return res.status(404).json({ success: false, message: "Fan not found" });
+    }
+
+    // Update confirmation
+    confirmation.confirmedDate = confirmedDate;
+    confirmation.time = time;
+    confirmation.location = location;
+    confirmation.status = "rescheduled";
+    await confirmation.save();
+
+    // Update fanRequest status
+    // fanRequest.status = "rescheduled";
+    fanRequest.rescheduledStatus = "rescheduled-by-talent";
+    await fanRequest.save();
+
+    // Store notification for fan
+    await Notification.create({
+      userId: fanUser._id,
+      description: `Talent <strong>${talentUser.name}</strong> rescheduled your session to ${confirmedDate} at ${time}.`,
+      category: "session",
+      referenceModel: "TalentConfirmation",
+      referenceId: confirmation._id,
+    });
+
+    // Store notification for talent
+    await Notification.create({
+      userId: talentUser._id,
+      description: `You rescheduled the session with <strong>${fanUser.name}</strong> to ${confirmedDate} at ${time}.`,
+      category: "session",
+      referenceModel: "TalentConfirmation",
+      referenceId: confirmation._id,
+    });
+
+    // Send email to fan
+    const subject = "Talent Rescheduled Your Session";
+    const message = `
+      <p>Hi ${fanUser.name},</p>
+      <p>Your session has been <strong>rescheduled</strong> by ${talentUser.name}.</p>
+      <p><strong>Date:</strong> ${confirmedDate}<br>
+      <strong>Time:</strong> ${time}<br>
+      <strong>Location:</strong> ${location}</p>
+      <p>Thanks,<br/>Fame Exchange Team</p>
+    `;
+
+    await sendMail(fanUser.email, subject, message);
+
+    res.json({
+      success: true,
+      message: "Session rescheduled successfully",
+      data: confirmation,
+    });
+  } catch (error) {
+    console.error("Talent Reschedule Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};

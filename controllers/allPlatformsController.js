@@ -7,7 +7,7 @@ import { getYoutubeSubscribers } from "./socialMediaControllers/youtubeControlle
 
 const platformHandlers = {
   youtube: { fn: getYoutubeSubscribers, key: "subscribers" },
-  // twitter: { fn: gettwitterFollower, key: "followers" },
+  twitter: { fn: gettwitterFollower, key: "followers" },
   instagram: { fn: getInstagramFollowers, key: "followers" },
   facebook: { fn: getFacebookFollowers, key: "followers" },
   tiktok: { fn: getTiktokFollowers, key: "followers" },

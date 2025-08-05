@@ -1,5 +1,7 @@
 import User from "../models/user.js";
 import mongoose from "mongoose";
+import UserDocument from "../models/userDocuments.js";
+import eventModel from "../models/eventModel.js";
 
 const userProfile = async (req, res) => {
   try {
@@ -75,13 +77,23 @@ export const updateUserProfile = async (req, res) => {
       }
     });
 
-    // 4. Construct update object
-    const updateData = { ...req.body };
+    // Fetch existing user
+    const existingUser = await User.findById(userId);
+    // Handle multiple images via file.path
+    let updatedImages = existingUser.images || [];
 
-    // 5. Attach uploaded image if present
-    if (req.file) {
-      updateData.image = `/uploads/users/${req.file.filename}`;
+    if (req.files && req.files.length > 0) {
+      const uploadedPaths = req.files.map((file) => file.path); // uses full path
+      updatedImages = [...updatedImages, ...uploadedPaths];
     }
+
+    // 4. Construct update object
+    const updateData = { ...req.body, images: updatedImages };
+
+    // // 5. Attach uploaded image if present
+    // if (req.file) {
+    //   updateData.image = `/uploads/users/${req.file.filename}`;
+    // }
 
     // 6. Perform update
     const updatedUser = await User.findByIdAndUpdate(
@@ -144,7 +156,7 @@ export const getUserProfile = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
   try {
-    if (req.user.usertype !== "ADMIN") {
+    if (req.user.role !== "ADMIN") {
       return res.status(403).json({ message: "Access denied" });
     }
 
@@ -223,21 +235,19 @@ export const getAllUsers = async (req, res) => {
 // GET /api/user/:id
 export const getUserById = async (req, res) => {
   try {
-    const userId = new mongoose.Types.ObjectId(req.params.id);
+    const userId = req.params.id;
 
-    const user = await User.aggregate([
-      { $match: { _id: userId } },
-      {
-        $project: {
-          password: 0,
-          otp_code: 0,
-        },
-      },
-    ]);
+    const user = await User.findById({ _id: userId }).select(
+      "-password -OTP_code -__v"
+    );
 
-    if (!user.length) return res.status(404).json({ error: "User not found" });
+    const userDocument = await UserDocument.findOne({ userId });
+    console.log(userDocument);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    res.status(200).json(user[0]);
+    const events = await eventModel.find({ userId });
+    console.log("events", events);
+    res.status(200).json({ success: true, user, userDocument, events });
   } catch (err) {
     console.error("Error getting user:", err);
     res.status(500).json({ error: "Internal Server Error" });

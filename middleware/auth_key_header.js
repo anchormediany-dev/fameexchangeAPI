@@ -2,7 +2,6 @@ import Keys from "../models/keys.js";
 
 export default async (req, res, next) => {
   const key = req.header("secret-key");
-  console.log("key", key);
 
   if (!key) {
     return res.status(401).json({ error: "secret key required" });
