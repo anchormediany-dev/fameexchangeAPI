@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
+const imageSchema = new mongoose.Schema(
+  {
+    fileUrl: { type: String, required: true },
+  },
+  { _id: true } // Auto-generate _id for each image
+);
 // Define the User schema
 const userSchema = new mongoose.Schema(
   {
@@ -10,7 +16,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
 
-    images: [{ type: String, default: "" }],
+    images: [imageSchema],
 
     role: {
       type: String,

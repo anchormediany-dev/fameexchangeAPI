@@ -132,6 +132,22 @@ export const getAllRequests = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+export const getOverAllRequests = async (req, res) => {
+  try {
+    const requests = await FanInverseRequest.find()
+      .populate("fanId")
+      .populate("talentId");
+    if (!requests) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Fan data not found" });
+    }
+    res.json({ success: true, data: requests });
+  } catch (error) {
+    console.error("Fetch Error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 // GET BY ID
 export const getRequestById = async (req, res) => {

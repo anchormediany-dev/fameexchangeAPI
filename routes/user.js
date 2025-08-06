@@ -8,6 +8,7 @@ import {
   updateUserById,
   deleteUserById,
   updateUserProfile,
+  deleteUserImage,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -31,6 +32,13 @@ router.get("/get/:id", auth_key_header, auth_token, getUserById);
 // Update a specific user
 router.put("/update/:id", auth_key_header, auth_token, updateUserById);
 
+//delete images
+router.delete(
+  "/profile/image/:imageId",
+  auth_key_header,
+  auth_token,
+  deleteUserImage
+);
 // Soft delete a user (admin only)
 router.delete("/delete/:id", auth_key_header, auth_admin, deleteUserById);
 export default router;

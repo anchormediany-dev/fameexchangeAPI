@@ -54,7 +54,7 @@ export const getFriendsByUser = async (req, res) => {
     if (friends.length === 0) {
       res.status(404).json({ success: false, message: "No friends found" });
     }
-    res.json({ success: true, data: friends });
+    res.status(200).json({ success: true, data: friends });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -83,16 +83,24 @@ export const updateFriend = async (req, res) => {
 // Delete Friend
 export const deleteFriend = async (req, res) => {
   try {
-    const { id } = req.params;
-    const deleted = await Friend.findByIdAndDelete(id);
+    const userId = req.user._id;
 
-    if (!deleted) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Friend not found" });
+    const { friendIds } = req.body;
+
+    if (!friendIds || !Array.isArray(friendIds) || friendIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide one or more friendIds in an array.",
+      });
     }
 
-    res.json({ success: true, message: "Friend deleted" });
+    // Delete all friends with provided friendIDS
+    const result = await Friend.deleteMany({
+      userId,
+      friendId: { $in: friendIds },
+    });
+
+    res.json({ success: true, message: "Deleted successfully" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -2,7 +2,8 @@ import User from "../models/user.js";
 import mongoose from "mongoose";
 import UserDocument from "../models/userDocuments.js";
 import eventModel from "../models/eventModel.js";
-
+import fs from "fs";
+import path from "path";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -83,7 +84,10 @@ export const updateUserProfile = async (req, res) => {
     let updatedImages = existingUser.images || [];
 
     if (req.files && req.files.length > 0) {
-      const uploadedPaths = req.files.map((file) => file.path); // uses full path
+      const uploadedPaths = req.files.map((file) => ({
+        // id: new Types.ObjectId(),
+        fileUrl: file.path.replace(/\\/g, "/"), // Ensure forward slashes
+      })); // uses full path
       updatedImages = [...updatedImages, ...uploadedPaths];
     }
 
@@ -128,7 +132,7 @@ export const getUserProfile = async (req, res) => {
   try {
     // const { userId } = req.params;
 
-    const userObjectId = new mongoose.Types.ObjectId(req.user._id);
+    const userObjectId = new mongoose.Types.ObjectId(req?.user?._id);
 
     const user = await User.aggregate([
       { $match: { _id: userObjectId } },
@@ -246,7 +250,6 @@ export const getUserById = async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const events = await eventModel.find({ userId });
-    console.log("events", events);
     res.status(200).json({ success: true, user, userDocument, events });
   } catch (err) {
     console.error("Error getting user:", err);
@@ -309,5 +312,54 @@ export const deleteUserById = async (req, res) => {
   } catch (err) {
     console.error("Error deleting user:", err);
     res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+//Delete users Profile images
+
+export const deleteUserImage = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { imageId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // ✅ Correct comparison
+    const imageToDelete = user.images.find(
+      (img) => img._id.toString() === imageId
+    );
+    if (!imageToDelete) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Image not found" });
+    }
+
+    // Remove from DB
+    user.images = user.images.filter((img) => img._id.toString() !== imageId);
+    await user.save();
+
+    // Optional: Delete physical file
+    const fullPath = path.join(process.cwd(), imageToDelete.fileUrl);
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Image deleted successfully",
+      images: user.images,
+    });
+  } catch (error) {
+    console.error("Error deleting image:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
