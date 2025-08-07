@@ -27,7 +27,7 @@ const fanInverseRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "rejected"],
+      enum: ["pending", "accepted", "decline"],
       default: "pending",
     },
   },

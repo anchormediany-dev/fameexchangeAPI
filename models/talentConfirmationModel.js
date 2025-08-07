@@ -16,7 +16,11 @@ const talentConfirmationSchema = new mongoose.Schema(
     time: { type: String, required: true },
     location: { type: String, required: true },
     fanName: { type: String, required: true },
-    status: { type: String, enum: ["accepted", "rescheduled"], required: true },
+    status: {
+      type: String,
+      enum: ["accepted", "decline", "rescheduled"],
+      required: true,
+    },
   },
   { timestamps: true }
 );

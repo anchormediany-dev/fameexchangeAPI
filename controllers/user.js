@@ -160,14 +160,15 @@ export const getUserProfile = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
   try {
-    if (req.user.role !== "ADMIN") {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    // if (req.user.role !== "ADMIN") {
+    //   return res.status(403).json({ message: "Access denied" });
+    // }
 
     const users = await User.aggregate([
       {
         $project: {
           user_id: "$_id",
+          name: 1,
           full_name: 1,
           email: 1,
           usertype: 1,

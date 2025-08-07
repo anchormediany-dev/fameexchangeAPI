@@ -69,6 +69,23 @@ export const getSessionsByUserId = async (req, res) => {
   }
 };
 
+//Get all availability dates
+export const getUpcomingSessions = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset to start of today
+
+    const sessions = await Session.find({
+      createdBy: req.user._id,
+      sessionDate: { $gte: today.toISOString().split("T")[0] },
+    }).sort({ sessionDate: 1, sessionTime: 1 });
+
+    res.status(200).json({ success: true, sessions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc Get single session by ID
 export const getSessionById = async (req, res) => {
   try {

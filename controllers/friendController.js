@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Friend from "../models/friendModel.js";
 import User from "../models/user.js";
 
@@ -52,9 +53,11 @@ export const getFriendsByUser = async (req, res) => {
     const { _id: userId } = req.user;
     const friends = await Friend.find({ userId }).sort({ dateAdded: -1 });
     if (friends.length === 0) {
-      res.status(404).json({ success: false, message: "No friends found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "No friends found" });
     }
-    res.status(200).json({ success: true, data: friends });
+    return res.status(200).json({ success: true, data: friends });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -85,7 +88,7 @@ export const deleteFriend = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    const { friendIds } = req.body;
+    let { friendIds } = req.body;
 
     if (!friendIds || !Array.isArray(friendIds) || friendIds.length === 0) {
       return res.status(400).json({
@@ -94,13 +97,42 @@ export const deleteFriend = async (req, res) => {
       });
     }
 
-    // Delete all friends with provided friendIDS
+    // Convert string IDs to ObjectIds
+    friendIds = friendIds
+      .map((id) => {
+        try {
+          return new mongoose.Types.ObjectId(id);
+        } catch (err) {
+          console.error("Invalid friendId:", id);
+          return null;
+        }
+      })
+      .filter(Boolean); // remove any nulls due to invalid IDs
+
+    // 🧪 DEBUG: See if matching records exist
+    const foundFriends = await Friend.find({
+      userId,
+      friendId: { $in: friendIds },
+    });
+
+    if (foundFriends.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No matching friend entries found for deletion.",
+      });
+    }
+
+    // Perform delete
     const result = await Friend.deleteMany({
       userId,
       friendId: { $in: friendIds },
     });
 
-    res.json({ success: true, message: "Deleted successfully" });
+    return res.json({
+      success: true,
+      message: "Friend(s) deleted successfully.",
+      deletedCount: result.deletedCount,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

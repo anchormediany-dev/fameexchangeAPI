@@ -24,7 +24,7 @@ router.post(
 );
 
 // Get all users
-router.get("/getusers", auth_key_header, auth_admin, getAllUsers);
+router.get("/getusers", auth_key_header, auth_token, getAllUsers);
 
 // Get specific user by ID
 router.get("/get/:id", auth_key_header, auth_token, getUserById);

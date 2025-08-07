@@ -120,8 +120,8 @@ userSchema.methods.generateToken = async function () {
     const payload = {
       id: this._id,
       email: this.email,
-      firstName: this.firstName,
-      lastName: this.lastName,
+      name: this.name,
+      full_name: this.full_name,
       is_verified: this.is_verified,
       isAdmin: this.isAdmin,
       KYC_Verified: this.KYC_Verified,

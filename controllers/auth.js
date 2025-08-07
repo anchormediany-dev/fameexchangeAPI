@@ -39,9 +39,12 @@ const signup = async (req, res) => {
     // ✅ Create User
     const user = await User.create(data);
 
+    // ✅ Generate Token
+    const token = await user.generateToken();
     res.status(201).json({
       success: true,
       userId: user._id.toString(),
+      token,
       emailVerification: emailSent
         ? "Email Verification Code Sent"
         : "Failed to send email",

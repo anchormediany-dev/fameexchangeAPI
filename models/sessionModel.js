@@ -5,7 +5,7 @@ const sessionSchema = new mongoose.Schema(
   {
     sessionLength: {
       type: String,
-      enum: ["15 minutes", "30 minutes", "45 minutes", "60 minutes"],
+      enum: ["15", "30", "45", "60"],
       required: true,
     },
     price: {
@@ -22,13 +22,7 @@ const sessionSchema = new mongoose.Schema(
     },
     bufferTime: {
       type: String,
-      enum: [
-        "0 minutes",
-        "5 minutes",
-        "10 minutes",
-        "15 minutes",
-        "30 minutes",
-      ],
+      enum: ["0", "5", "10", "15", "20", "30"],
       required: true,
     },
     timeZone: {
@@ -37,7 +31,7 @@ const sessionSchema = new mongoose.Schema(
     },
     accessType: {
       type: String,
-      enum: ["VR", "Browser"],
+      enum: ["onsite", "online"],
       required: true,
     },
     isActive: {
