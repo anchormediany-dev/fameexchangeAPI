@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Session from "../models/sessionModel.js";
 import User from "../models/user.js";
 
@@ -72,15 +73,40 @@ export const getSessionsByUserId = async (req, res) => {
 //Get all availability dates
 export const getUpcomingSessions = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Reset to start of today
+    const now = new Date();
 
-    const sessions = await Session.find({
-      createdBy: req.user._id,
-      sessionDate: { $gte: today.toISOString().split("T")[0] },
-    }).sort({ sessionDate: 1, sessionTime: 1 });
+    // 1st and last day of the current month
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    res.status(200).json({ success: true, sessions });
+    // Because sessionDate is stored as "YYYY-MM-DD" (string)
+    const startISO = start.toISOString().slice(0, 10); // e.g. "2025-08-01"
+    const endISO = end.toISOString().slice(0, 10); // e.g. "2025-08-31"
+
+    const { talentId } = req.params;
+
+    const filter = {
+      sessionDate: { $gte: startISO, $lte: endISO },
+    };
+
+    // Optional: filter by a specific talent
+    if (talentId && mongoose.Types.ObjectId.isValid(talentId)) {
+      filter.createdBy = talentId;
+    }
+
+    const sessions = await Session.find(filter).sort({
+      sessionDate: 1,
+      sessionTime: 1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+      count: sessions.length,
+      range: { start: startISO, end: endISO },
+      sessions,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

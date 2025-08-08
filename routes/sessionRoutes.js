@@ -18,7 +18,7 @@ router.post("/", auth_token, createSession);
 router.get("/", auth_token, getAllSessions);
 router.get("/user", auth_token, getSessionsByUserId);
 // GET /api/sessions/upcoming
-router.get("/upcoming", auth_token, getUpcomingSessions);
+router.get("/upcoming/:talentId", auth_token, getUpcomingSessions);
 router.get("/:id", auth_token, getSessionById);
 router.patch("/:id/status", auth_token, updateSessionStatus);
 router.delete("/:id", auth_token, deleteSession);

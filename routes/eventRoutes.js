@@ -6,6 +6,7 @@ import {
   updateEvent,
   deleteEvent,
   getFeaturedUpcomingEvents,
+  getEventUserById,
 } from "../controllers/eventController.js";
 
 import auth_token from "../middleware/auth_token.js";
@@ -23,6 +24,7 @@ const uploadFields = upload.fields([
 
 router.post("/", uploadFields, auth_key_header, auth_token, createEvent);
 router.get("/", auth_key_header, auth_token, getAllEvents);
+router.get("/user", auth_key_header, auth_token, getEventUserById);
 router.get("/featured-upcoming", getFeaturedUpcomingEvents);
 router.get("/:id", auth_key_header, auth_token, getEventById);
 router.put("/:id", uploadFields, auth_key_header, auth_token, updateEvent);

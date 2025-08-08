@@ -1,4 +1,5 @@
 import Networth from "../models/Networth.js";
+import User from "../models/user.js";
 import { getAllPlatformsData } from "./allPlatformsController.js";
 
 export const saveNetworthData = async (req, res) => {
@@ -23,6 +24,19 @@ export const saveNetworthData = async (req, res) => {
     }
 
     const urls = { youtube, twitter, instagram, facebook, tiktok, snapchat };
+
+    const userSocialMediaData = await User.findByIdAndUpdate(
+      userId,
+      {
+        social_youtube: youtube,
+        social_twitter: twitter,
+        social_insta: instagram,
+        social_facebook: facebook,
+        social_tiktok: tiktok,
+        social_snap: snapchat,
+      },
+      { new: true }
+    );
     const { totalFollowers, netWorth, platforms } = await getAllPlatformsData(
       urls
     );

@@ -156,7 +156,31 @@ export const getAllEvents = async (req, res) => {
 // GET ONE
 export const getEventById = async (req, res) => {
   try {
-    const event = await Event.findById(req.params.id);
+    const event = await Event.findById(req.params.id).populate(
+      "userId",
+      "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
+      // "-password -__v -updatedAt -createdAt -isDeleted -is_over_18 -agreed_terms -is_verified -OTP_code -is_login_facebook -is_login_google -isAdmin -password"
+    );
+    if (!event)
+      return res.status(404).json({ success: false, error: "Event not found" });
+    res.status(200).json({ success: true, data: event });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+export const getEventUserById = async (req, res) => {
+  console.log(req.user._id);
+  const userId = req.user._id;
+  try {
+    const event = await Event.find({ userId })
+      .sort({ createdAt: -1 })
+      .populate(
+        "userId",
+        "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
+      )
+      .lean();
+
+    console.log(event);
     if (!event)
       return res.status(404).json({ success: false, error: "Event not found" });
     res.status(200).json({ success: true, data: event });

@@ -9,6 +9,7 @@ import {
   deleteUserById,
   updateUserProfile,
   deleteUserImage,
+  getTalentOverview,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -28,6 +29,12 @@ router.get("/getusers", auth_key_header, auth_token, getAllUsers);
 
 // Get specific user by ID
 router.get("/get/:id", auth_key_header, auth_token, getUserById);
+
+// Self (talent must be logged in)
+router.get("/overview", auth_key_header, auth_token, getTalentOverview);
+
+// Admin/ops can fetch by talent id (protect with your admin middleware if needed)
+router.get("/:id/overview", auth_key_header, auth_token, getTalentOverview);
 
 // Update a specific user
 router.put("/update/:id", auth_key_header, auth_token, updateUserById);

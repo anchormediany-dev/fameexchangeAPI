@@ -25,6 +25,10 @@ const fanInverseRequestSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    ispaid: {
+      type: Boolean,
+      default: false,
+    },
     status: {
       type: String,
       enum: ["pending", "accepted", "decline"],

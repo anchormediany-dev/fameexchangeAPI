@@ -134,7 +134,10 @@ export const getAllRequests = async (req, res) => {
 };
 export const getOverAllRequests = async (req, res) => {
   try {
-    const requests = await FanInverseRequest.find()
+    const userId = req.user._id;
+    const requests = await FanInverseRequest.find({
+      $or: [{ talentId: userId }],
+    })
       .populate("fanId")
       .populate("talentId");
     if (!requests) {

@@ -16,6 +16,12 @@ const signup = async (req, res) => {
       });
     }
     // ✅ Check if user exists
+    const usernameExist = await User.findOne({ name: data.name });
+    if (usernameExist) {
+      return res
+        .status(400)
+        .json({ message: "User Name already exists", success: false });
+    }
     const userExist = await User.findOne({ email: data.email });
     if (userExist) {
       return res

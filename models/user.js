@@ -11,7 +11,7 @@ const imageSchema = new mongoose.Schema(
 // Define the User schema
 const userSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
+    name: { type: String, required: true, unique: true },
     full_name: { type: String },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
@@ -124,6 +124,7 @@ userSchema.methods.generateToken = async function () {
       full_name: this.full_name,
       is_verified: this.is_verified,
       isAdmin: this.isAdmin,
+      role: this.role,
       KYC_Verified: this.KYC_Verified,
     };
     return jwt.sign(payload, process.env.JWT_SECRET_KEY, { expiresIn: "1d" });

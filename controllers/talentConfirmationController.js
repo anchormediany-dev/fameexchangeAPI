@@ -23,7 +23,7 @@ export const confirmRequest = async (req, res) => {
         .status(400)
         .json({ success: false, error: "Talent not exists" });
     }
-    console.log("talentUser talentUser", talentUser);
+
     if (
       !requestId ||
       !confirmedDate ||
@@ -41,6 +41,7 @@ export const confirmRequest = async (req, res) => {
 
     // Find fan user
     const fanUser = await User.findOne({ name: fanName });
+    console.log(fanUser);
     if (!fanUser || fanUser.role !== "FAN") {
       return res.status(400).json({
         success: false,
@@ -57,6 +58,35 @@ export const confirmRequest = async (req, res) => {
       });
     }
 
+    // console.log("fanRequest", fanRequest);
+
+    // 🔐 Ensure the confirming talent owns this request
+    if (!fanRequest.talentId.equals(talentId)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to confirm this request",
+      });
+    }
+
+    // Get the actual fan from the request
+    const fanUserData = await User.findById(fanRequest.fanId);
+    if (!fanUser || fanUser.role !== "FAN") {
+      return res.status(400).json({
+        success: false,
+        error: "Fan in the request is invalid or not a FAN",
+      });
+    }
+
+    console.log(fanUserData.name, fanName);
+    // ✅ Compare provided fanName with the actual fan's name in the request
+    if (
+      fanUserData.name.trim().toLowerCase() !== fanName.trim().toLowerCase()
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Provided fan name does not match the fan in the request",
+      });
+    }
     // console.log("fanRequest", fanRequest);
     // console.log("fanUser", fanUser);
     // const fanUser = await User.findById(fanRequest.fanId);
@@ -105,7 +135,13 @@ export const confirmRequest = async (req, res) => {
 // GET ALL
 export const getConfirmations = async (req, res) => {
   try {
-    const confirmations = await TalentConfirmation.find()
+    const userId = req.user._id;
+    const confirmations = await TalentConfirmation.find({
+      $or: [
+        { talentId: userId }, // If the logged-in user is the talent
+        { requesterId: userId }, // If you have a requester field
+      ],
+    })
       .populate("requestId")
       .populate("talentId");
     res.json({ success: true, data: confirmations });
@@ -177,7 +213,7 @@ export const deleteConfirmation = async (req, res) => {
 
 export const rescheduleTalentConfirmation = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id: requestId } = req.params;
     const { confirmedDate, time, location } = req.body;
 
     const talentId = req?.user?._id;
@@ -212,36 +248,59 @@ export const rescheduleTalentConfirmation = async (req, res) => {
       });
     }
 
-    const confirmation = await TalentConfirmation.findById(id);
-    if (!confirmation) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Confirmation not found" });
-    }
-
-    const fanRequest = await FanInverseRequestModel.findById(
-      confirmation.requestId
-    );
+    // --- Load the fan request and ownership check
+    const fanRequest = await FanInverseRequestModel.findById(requestId);
     if (!fanRequest) {
       return res
         .status(404)
-        .json({ success: false, message: "Associated fan request not found" });
+        .json({ success: false, message: "Fan request not found" });
+    }
+    // console.log("fanRequest", fanRequest);
+
+    const fan = await User.findOne(fanRequest.fanId);
+    console.log("fan test", fan);
+    // console.log(fanRequest.talentId, talentId);
+    // Ensure this request is for the logged-in talent
+    if (fanRequest.talentId?.toString() !== talentId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not allowed to modify this request.",
+      });
     }
 
-    const fanUser = await User.findById(fanRequest.fanId);
+    // --- Load fan user
+    const fanUser = await User.findById(fanRequest.fanId).select("name email");
     if (!fanUser) {
       return res.status(404).json({ success: false, message: "Fan not found" });
     }
 
-    // Update confirmation
-    confirmation.confirmedDate = confirmedDate;
-    confirmation.time = time;
-    confirmation.location = location;
-    confirmation.status = "rescheduled";
-    await confirmation.save();
+    let confirmation = await TalentConfirmation.findOne({
+      requestId: fanRequest._id,
+    });
 
-    // Update fanRequest status
-    // fanRequest.status = "rescheduled";
+    if (!confirmation) {
+      confirmation = await TalentConfirmation.create({
+        requestId: fanRequest._id,
+        fanId: fanRequest.fanId,
+        talentId,
+        confirmedDate,
+        time,
+        location,
+        status: "rescheduled",
+        confirmedAt: newDateTime,
+        fanName: fan.name,
+      });
+    } else {
+      confirmation.confirmedDate = confirmedDate;
+      confirmation.time = time;
+      fanName: fan.name;
+      confirmation.location = location;
+      confirmation.status = "rescheduled";
+      confirmation.confirmedAt = newDateTime;
+      await confirmation.save();
+    }
+
+    fanRequest.status = "accepted";
     fanRequest.rescheduledStatus = "rescheduled-by-talent";
     await fanRequest.save();
 

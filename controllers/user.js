@@ -4,6 +4,8 @@ import UserDocument from "../models/userDocuments.js";
 import eventModel from "../models/eventModel.js";
 import fs from "fs";
 import path from "path";
+import TalentConfirmation from "../models/talentConfirmationModel.js";
+import Session from "../models/sessionModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -173,6 +175,9 @@ export const getAllUsers = async (req, res) => {
           email: 1,
           usertype: 1,
           is_active: 1,
+          role: 1,
+          image: 1,
+
           created_at: "$createdAt",
         },
       },
@@ -362,5 +367,82 @@ export const deleteUserImage = async (req, res) => {
       message: "Internal server error",
       error: error.message,
     });
+  }
+};
+
+export const getTalentOverview = async (req, res) => {
+  try {
+    const paramId = req.params?.id; // optional: /api/talent/:id/full
+    const talentId = paramId || req?.user?._id;
+
+    if (!talentId || !mongoose.Types.ObjectId.isValid(talentId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or missing talent id" });
+    }
+
+    // If fetching self (no :id in route), enforce TALENT role
+    if (!paramId) {
+      const me = await User.findById(talentId).select("role");
+      if (!me || String(me.role).toUpperCase() !== "TALENT") {
+        return res
+          .status(403)
+          .json({ success: false, message: "Access denied (not a TALENT)" });
+      }
+    }
+
+    // Safe projection for profile (exclude password & sensitive flags if needed)
+    const userProjection = {
+      password: 0,
+      OTP_code: 0,
+      is_login_google: 0,
+      is_login_facebook: 0,
+      google_login_id: 0,
+      facebook_login_id: 0,
+      __v: 0,
+    };
+
+    const [profile, sessions, confirmations] = await Promise.all([
+      User.findById(talentId).select(userProjection).lean(),
+
+      // All sessions created by this talent
+      Session.find({ createdBy: talentId })
+        .sort({ sessionDate: 1, sessionTime: 1 })
+        // populate creator (lightweight)
+        .populate({
+          path: "createdBy",
+          select: "name full_name email role images stage_name",
+        })
+        .lean(),
+
+      // All confirmations for this talent
+      TalentConfirmation.find({ talentId })
+        .sort({ createdAt: -1 })
+        // populate request & talent (adjust fields to your needs)
+        .populate({ path: "requestId" })
+        .populate({
+          path: "talentId",
+          select: "name full_name email role images stage_name",
+        })
+        .lean(),
+    ]);
+
+    if (!profile) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent not found" });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        profile,
+        sessions, // all sessions (no limit)
+        confirmations, // all confirmations (no limit)
+      },
+    });
+  } catch (err) {
+    console.error("getTalentOverview error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };

@@ -20,6 +20,8 @@ import connectToDatabase from "./config/db.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
+import newsletterRoutes from "./routes/newsletterRoutes.js";
+import teamRoutes from "./routes/teamRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -49,8 +51,9 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/fan-request", fanRequestRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/talent-confirmation", talentConfirmationRoutes);
+app.use("/api/newsletter", newsletterRoutes);
+app.use("/api/team", teamRoutes);
 app.use("/uploads", express.static("uploads"));
-
 // Health Check Endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "UP" });
