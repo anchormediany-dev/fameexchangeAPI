@@ -325,3 +325,74 @@ export const deleteEvent = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+// Searched Events
+
+const toBool = (v, def = false) =>
+  typeof v === "string" ? v.toLowerCase() === "true" : v ?? def;
+
+const escapeRegex = (str = "") => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getMonthRange = (month, year) => {
+  // month: 1-12
+  const y = Number(year);
+  const m = Number(month) - 1; // JS Date month is 0-11
+  const start = new Date(y, m, 1, 0, 0, 0, 0);
+  const end = new Date(y, m + 1, 1, 0, 0, 0, 0); // exclusive upper bound
+  return { start, end };
+};
+
+export const getMonthlyEvents = async (req, res) => {
+  try {
+    const now = new Date();
+    const {
+      month = (now.getMonth() + 1).toString(), // 1..12
+      year = now.getFullYear().toString(),
+      q,
+      withinMonth = "false", // if true, keep month filter when searching
+      status, // optional (e.g., "active")
+      featured, // "true" | "false" optional
+    } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+    if (featured === "true") filter.is_featured = true;
+    if (featured === "false") filter.is_featured = { $in: [false, null] };
+
+    // Base: month range
+    const { start, end } = getMonthRange(month, year);
+    let applyMonth = true;
+
+    // If searching by name, default to ignore month filter (per requirement)
+    if (q && q.trim()) {
+      applyMonth = toBool(withinMonth, false);
+
+      // Similar names (case-insensitive). If you have a text index on title, you can swap to $text.
+      const rx = new RegExp(escapeRegex(q.trim()), "i");
+      filter.title = rx;
+    }
+
+    if (applyMonth) {
+      filter.datetime = { $gte: start, $lt: end };
+    }
+
+    const events = await Event.find(filter)
+      .sort({ datetime: 1 })
+      .populate(
+        "userId",
+        "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
+      );
+    return res.status(200).json({
+      success: true,
+      month: applyMonth ? Number(month) : null,
+      year: applyMonth ? Number(year) : null,
+      total: events.length,
+      data: events,
+    });
+  } catch (error) {
+    console.error("Error fetching monthly/search events:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Internal server error" });
+  }
+};

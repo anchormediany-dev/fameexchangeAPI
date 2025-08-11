@@ -25,7 +25,7 @@ const requireAdmin = (req, res, next) => {
 router.get("/public", listPublicTeam);
 
 // Admin
-router.get("/", auth_admin, auth_key_header, listTeam);
+router.get("/", auth_key_header, listTeam);
 router.post("/", auth_admin, auth_key_header, requireAdmin, createTeam);
 router.put("/:id", auth_admin, auth_key_header, requireAdmin, updateTeam);
 router.delete("/:id", auth_admin, auth_key_header, requireAdmin, deleteTeam);
