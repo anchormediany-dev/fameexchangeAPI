@@ -190,6 +190,20 @@ export const getAllUsers = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+export const getAllTalentUsers = async (req, res) => {
+  try {
+    // if (req.user.role !== "ADMIN") {
+    //   return res.status(403).json({ message: "Access denied" });
+    // }
+
+    const taleUsers = await User.find({ role: "TALENT" });
+    console.log(taleUsers);
+    res.status(200).json({ taleUsers });
+  } catch (err) {
+    console.error("Get all users error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 //Fetch own profile or any profile (admin only)
 

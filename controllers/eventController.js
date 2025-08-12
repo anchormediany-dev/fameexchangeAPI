@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Event from "../models/eventModel.js";
 import User from "../models/user.js";
 
@@ -25,7 +26,6 @@ export const createEvent = async (req, res) => {
       prefrence,
     } = req.body;
     // const event = new Event(req.body);
-
     const missingFields = [];
     if (!datetime) missingFields.push("datetime");
     if (!title) missingFields.push("title");
@@ -44,6 +44,11 @@ export const createEvent = async (req, res) => {
     }
     const LoginUser = req.user._id;
     const user = await User.findById(req.user._id);
+    if (!user.role === "ADMIN") {
+      return res
+        .status(404)
+        .json({ success: false, error: "Admin Access Required" });
+    }
     if (!user) {
       return res.status(404).json({ success: false, error: "User not found" });
     }
@@ -76,6 +81,7 @@ export const createEvent = async (req, res) => {
     }
     // Parse JSON strings
     let parsedDiscountCodes = [];
+    let talentData = [];
     let parsedCoordinates = {};
 
     if (discount_codes) {
@@ -97,6 +103,15 @@ export const createEvent = async (req, res) => {
           .json({ success: false, error: "Invalid event_coordinates format" });
       }
     }
+    if (talentData) {
+      try {
+        talentData = JSON.parse(talent);
+      } catch {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid talent format" });
+      }
+    }
 
     // Handle files
     const logo = req.files?.logo?.[0]?.path || "";
@@ -115,6 +130,7 @@ export const createEvent = async (req, res) => {
       datetime,
       addedby: LoginUser.role,
       title,
+      talent: talentData,
       summary,
       details,
       event_type,
@@ -127,6 +143,7 @@ export const createEvent = async (req, res) => {
       organizername,
       prefrence,
       logo,
+      talent,
       event_cover: eventcover,
       event_images: eventimages,
       is_featured,
@@ -156,13 +173,31 @@ export const getAllEvents = async (req, res) => {
 // GET ONE
 export const getEventById = async (req, res) => {
   try {
-    const event = await Event.findById(req.params.id).populate(
-      "userId",
-      "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
-      // "-password -__v -updatedAt -createdAt -isDeleted -is_over_18 -agreed_terms -is_verified -OTP_code -is_login_facebook -is_login_google -isAdmin -password"
-    );
+    const event = await Event.findById(req.params.id)
+      .populate(
+        "userId",
+        "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
+        // "-password -__v -updatedAt -createdAt -isDeleted -is_over_18 -agreed_terms -is_verified -OTP_code -is_login_facebook -is_login_google -isAdmin -password"
+      )
+      .lean();
     if (!event)
       return res.status(404).json({ success: false, error: "Event not found" });
+
+    // Ensure prefrences is always an array
+    const prefs = Array.isArray(event.prefrences) ? event.prefrences : [];
+
+    // ✅ Flat counts
+    event.interested = prefs.filter(
+      (p) => p.prefrence_Type === "interested"
+    ).length;
+    event.notinterested = prefs.filter(
+      (p) => p.prefrence_Type === "notinterested"
+    ).length;
+    event.attending = prefs.filter(
+      (p) => p.prefrence_Type === "attending"
+    ).length;
+    event.live = prefs.filter((p) => p.event_type === "live").length;
+    event.virtual = prefs.filter((p) => p.event_type === "virtual").length;
     res.status(200).json({ success: true, data: event });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
@@ -376,12 +411,95 @@ export const getMonthlyEvents = async (req, res) => {
       filter.datetime = { $gte: start, $lt: end };
     }
 
-    const events = await Event.find(filter)
-      .sort({ datetime: 1 })
-      .populate(
-        "userId",
-        "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
-      );
+    const pipeline = [
+      { $match: filter },
+      { $sort: { datetime: 1 } },
+
+      // Populate user data
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "userId",
+          pipeline: [
+            {
+              $project: {
+                name: 1,
+                KYC_Verified: 1,
+                images: 1,
+                biography: 1,
+                representation: 1,
+                token_brand_name: 1,
+                talent: 1,
+                selected_reps: 1,
+                is_rep_have: 1,
+                is_active: 1,
+                role: 1,
+                image: 1,
+                email: 1,
+              },
+            },
+          ],
+        },
+      },
+      { $unwind: { path: "$userId", preserveNullAndEmptyArrays: true } },
+
+      // ✅ ensure prefrences is always an array
+      { $set: { prefrences: { $ifNull: ["$prefrences", []] } } },
+      // Add flat counts
+      {
+        $addFields: {
+          interested: {
+            $size: {
+              $filter: {
+                input: "$prefrences",
+                as: "p",
+                cond: { $eq: ["$$p.prefrence_Type", "interested"] },
+              },
+            },
+          },
+          notinterested: {
+            $size: {
+              $filter: {
+                input: "$prefrences",
+                as: "p",
+                cond: { $eq: ["$$p.prefrence_Type", "notinterested"] },
+              },
+            },
+          },
+          attending: {
+            $size: {
+              $filter: {
+                input: "$prefrences",
+                as: "p",
+                cond: { $eq: ["$$p.prefrence_Type", "attending"] },
+              },
+            },
+          },
+          live: {
+            $size: {
+              $filter: {
+                input: "$prefrences",
+                as: "p",
+                cond: { $eq: ["$$p.event_type", "live"] },
+              },
+            },
+          },
+          virtual: {
+            $size: {
+              $filter: {
+                input: "$prefrences",
+                as: "p",
+                cond: { $eq: ["$$p.event_type", "virtual"] },
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    const events = await Event.aggregate(pipeline);
     return res.status(200).json({
       success: true,
       month: applyMonth ? Number(month) : null,
@@ -394,5 +512,94 @@ export const getMonthlyEvents = async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "Internal server error" });
+  }
+};
+
+export const setEventPreference = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    // allow body userId or authenticated user
+    const bodyUserId = req.body.userId || req?.user?._id;
+    const { prefrence_Type, event_type } = req.body;
+
+    // basic validations
+    if (!mongoose.Types.ObjectId.isValid(eventId)) {
+      return res.status(400).json({ success: false, error: "Invalid eventId" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(bodyUserId)) {
+      return res.status(400).json({ success: false, error: "Invalid userId" });
+    }
+
+    const allowedPref = ["interested", "notinterested", "attending"];
+    const allowedEventType = ["live", "virtual"];
+
+    if (!allowedPref.includes(prefrence_Type)) {
+      return res.status(400).json({
+        success: false,
+        error: `prefrence_Type must be one of: ${allowedPref.join(", ")}`,
+      });
+    }
+
+    if (!allowedEventType.includes(event_type)) {
+      return res.status(400).json({
+        success: false,
+        error: `event_type must be one of: ${allowedEventType.join(", ")}`,
+      });
+    }
+
+    // Ensure event & user exist (optional but good practice)
+    const [event, user] = await Promise.all([
+      Event.findById(eventId).select("_id"),
+      User.findById(bodyUserId).select("_id"),
+    ]);
+
+    if (!event) {
+      return res.status(404).json({ success: false, error: "Event not found" });
+    }
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    // 1) Try to update existing preference for this user
+    const updateExisting = await Event.updateOne(
+      { _id: eventId, "prefrences.users": bodyUserId },
+      {
+        $set: {
+          "prefrences.$.prefrence_Type": prefrence_Type,
+          "prefrences.$.event_type": event_type,
+        },
+      }
+    );
+
+    if (updateExisting.modifiedCount === 0) {
+      // 2) If no existing, push a new preference
+      await Event.updateOne(
+        { _id: eventId },
+        {
+          $push: {
+            prefrences: {
+              users: bodyUserId,
+              prefrence_Type,
+              event_type,
+            },
+          },
+        }
+      );
+    }
+
+    // Return the updated preferences (lightweight)
+    const updated = await Event.findById(eventId)
+      .select("prefrences")
+      .populate("prefrences.users", "name email role image");
+
+    return res.status(200).json({
+      success: true,
+      message: "Preference saved",
+      data: updated?.prefrences || [],
+    });
+  } catch (err) {
+    console.error("setEventPreference error:", err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 };

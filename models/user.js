@@ -76,8 +76,8 @@ const userSchema = new mongoose.Schema(
 
     talent: [
       {
-        category: { type: String, required: true },
-        subcategory: [{ type: String, required: true }],
+        category: { type: String },
+        subcategory: [{ type: String }],
       },
     ],
 

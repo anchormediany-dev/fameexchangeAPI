@@ -10,6 +10,7 @@ import {
   updateUserProfile,
   deleteUserImage,
   getTalentOverview,
+  getAllTalentUsers,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -26,6 +27,7 @@ router.post(
 
 // Get all users
 router.get("/getusers", auth_key_header, auth_token, getAllUsers);
+router.get("/get-talent", auth_key_header, auth_token, getAllTalentUsers);
 
 // Get specific user by ID
 router.get("/get/:id", auth_key_header, auth_token, getUserById);

@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+const prefrences = new mongoose.Schema({
+  users: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  prefrence_Type: {
+    type: String,
+    enum: ["interested", "notinterested", "attending"],
+    default: "",
+  },
+  event_type: { type: String, enum: ["live", "virtual"], required: true },
+});
 const eventSchema = new mongoose.Schema(
   {
     userId: {
@@ -7,17 +16,18 @@ const eventSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    users: [
-      { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    ],
+    prefrences: [prefrences],
     datetime: { type: Date, required: true },
-    addedBy: { type: String },
+    addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
     title: { type: String, required: true },
-    short_summary: { type: String },
+    summary: { type: String },
     details: { type: String },
-
-    event_type: { type: String, enum: ["live", "virtual"], required: true },
+    talent: [
+      {
+        type: String,
+      },
+    ],
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     category: { type: String },
 
@@ -25,7 +35,7 @@ const eventSchema = new mongoose.Schema(
     address: { type: String },
     phone: { type: String },
     website: { type: String },
-    prefrence: { type: String },
+
     organizer_name: { type: String },
     logo: { type: String }, // image URL or path
     event_cover: { type: String }, // image URL or path
