@@ -16,12 +16,12 @@ const signupSchema = z.object({
     invalid_type_error: "Invalid role selected",
   }),
 
-  talent: z.array(
-    z.object({
-      category: z.string({ required_error: "Talent category is required" }),
-      subcategories: z.array(z.string()),
-    })
-  ),
+  // talent: z.array(
+  //   z.object({
+  //     category: z.string().optional(),
+  //     subcategories: z.array(z.string()).optional(),
+  //   })
+  // ),
 
   usertype: z.string().optional(),
   is_active: z.boolean().optional(),

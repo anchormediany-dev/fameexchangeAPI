@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
 import Session from "../models/sessionModel.js";
+import Friend from "../models/friendModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -405,8 +406,8 @@ export const getTalentOverview = async (req, res) => {
       }
     }
 
-    // Safe projection for profile (exclude password & sensitive flags if needed)
-    const userProjection = {
+    // Projections
+    const privateUserProjection = {
       password: 0,
       OTP_code: 0,
       is_login_google: 0,
@@ -415,30 +416,38 @@ export const getTalentOverview = async (req, res) => {
       facebook_login_id: 0,
       __v: 0,
     };
+    const publicUserProjection = "name full_name email role images stage_name";
 
-    const [profile, sessions, confirmations] = await Promise.all([
-      User.findById(talentId).select(userProjection).lean(),
+    // --- Base queries (profile/sessions/confirmations) ---
+    const profileQ = User.findById(talentId)
+      .select(privateUserProjection)
+      .lean();
 
-      // All sessions created by this talent
-      Session.find({ createdBy: talentId })
-        .sort({ sessionDate: 1, sessionTime: 1 })
-        // populate creator (lightweight)
-        .populate({
-          path: "createdBy",
-          select: "name full_name email role images stage_name",
-        })
-        .lean(),
+    const sessionsQ = Session.find({ createdBy: talentId })
+      .sort({ sessionDate: 1, sessionTime: 1 })
+      .populate({ path: "createdBy", select: publicUserProjection })
+      .lean();
 
-      // All confirmations for this talent
-      TalentConfirmation.find({ talentId })
-        .sort({ createdAt: -1 })
-        // populate request & talent (adjust fields to your needs)
-        .populate({ path: "requestId" })
-        .populate({
-          path: "talentId",
-          select: "name full_name email role images stage_name",
-        })
-        .lean(),
+    const confirmationsQ = TalentConfirmation.find({ talentId })
+      .sort({ createdAt: -1 })
+      .populate({ path: "requestId" })
+      .populate({ path: "talentId", select: publicUserProjection })
+      .lean();
+
+    // --- Friendships (per your schema: userId, friendId, status) ---
+    const friendshipsQ = Friend.find({
+      status: "accepted",
+      $or: [{ userId: talentId }, { friendId: talentId }],
+    })
+      .select("userId friendId friendName status notes createdAt updatedAt")
+      .lean();
+
+    // Wait for profile (used for event matching by stage_name as a fallback)
+    const [profile, sessions, confirmations, friendships] = await Promise.all([
+      profileQ,
+      sessionsQ,
+      confirmationsQ,
+      friendshipsQ,
     ]);
 
     if (!profile) {
@@ -447,12 +456,66 @@ export const getTalentOverview = async (req, res) => {
         .json({ success: false, message: "Talent not found" });
     }
 
+    // --- Resolve "friends" as user docs (the "other" side of each accepted friendship) ---
+    const mine = String(talentId);
+    const otherIds = [];
+    for (const f of friendships) {
+      const a = String(f.userId);
+      const b = String(f.friendId);
+      const other = a === mine ? b : a;
+      if (mongoose.Types.ObjectId.isValid(other)) otherIds.push(other);
+    }
+    const uniqueFriendIds = [...new Set(otherIds)];
+    const friends = uniqueFriendIds.length
+      ? await User.find({ _id: { $in: uniqueFriendIds } })
+          .select(publicUserProjection)
+          .lean()
+      : [];
+
+    // --- Events (per your schema) ---
+    // Your Event has:
+    //  - userId: ObjectId (creator)
+    //  - talent: [String] (we'll match either talentId as string OR stage_name)
+    //  - prefrences[].users: ObjectId with prefrence_Type ('attending' etc.)
+    const talentIdStr = String(talentId);
+    const possibleTalentTags = [talentIdStr];
+    if (profile?.stage_name) possibleTalentTags.push(profile.stage_name);
+
+    const events = await eventModel
+      .find({
+        $or: [
+          // created by this talent
+          { userId: talentId },
+          // listed in "talent" (array of strings)
+          { talent: { $in: possibleTalentTags } },
+          // attending via preferences subdoc
+          {
+            prefrences: {
+              $elemMatch: {
+                users: talentId,
+                prefrence_Type: "attending",
+              },
+            },
+          },
+        ],
+      })
+      .sort({ datetime: 1, createdAt: -1 })
+      .populate({ path: "userId", select: publicUserProjection }) // creator
+      .populate({ path: "addedBy", select: publicUserProjection }) // optional
+      .populate({ path: "prefrences.users", select: publicUserProjection }) // attendees
+      .lean();
+
     return res.json({
       success: true,
       data: {
         profile,
-        sessions, // all sessions (no limit)
-        confirmations, // all confirmations (no limit)
+        sessions,
+        confirmations,
+        // Friends as user docs (for UI), and raw edges if you need meta (notes/status)
+        friends,
+        // friendships,
+        // Events where this talent is creator, tagged in `talent[]`, or attending
+        events,
       },
     });
   } catch (err) {

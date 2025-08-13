@@ -56,6 +56,7 @@ const signup = async (req, res) => {
         : "Failed to send email",
     });
   } catch (err) {
+    console.log(err);
     const error = err.errors?.[0]?.message || err.message;
     res.status(400).json({ success: false, message: error });
   }
