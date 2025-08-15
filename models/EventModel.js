@@ -25,7 +25,8 @@ const eventSchema = new mongoose.Schema(
     details: { type: String },
     talent: [
       {
-        type: String,
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
       },
     ],
     status: { type: String, enum: ["active", "inactive"], default: "active" },

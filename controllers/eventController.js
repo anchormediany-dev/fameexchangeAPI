@@ -24,6 +24,7 @@ export const createEvent = async (req, res) => {
       event_coordinates,
       is_featured,
       prefrence,
+      // talent,
     } = req.body;
     // const event = new Event(req.body);
     const missingFields = [];
@@ -58,11 +59,11 @@ export const createEvent = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // reset to start of day
     const now = new Date();
-    if (isNaN(eventDate.getTime())) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid datetime format" });
-    }
+    // if (isNaN(eventDate.getTime())) {
+    //   return res
+    //     .status(400)
+    //     .json({ success: false, error: "Invalid datetime format" });
+    // }
 
     // Compare full datetime (date + time)
     if (eventDate.getTime() <= now.getTime()) {
@@ -103,16 +104,45 @@ export const createEvent = async (req, res) => {
           .json({ success: false, error: "Invalid event_coordinates format" });
       }
     }
-    if (talentData) {
-      try {
-        talentData = JSON.parse(talent);
-      } catch {
-        return res
-          .status(400)
-          .json({ success: false, error: "Invalid talent format" });
+
+    // ---- DROP THIS IN before creating the Event ----
+    let { talent } = req.body;
+
+    // If it's ["[\"id\",\"id2\"]"] -> unwrap & parse
+    if (
+      Array.isArray(talent) &&
+      talent.length === 1 &&
+      typeof talent[0] === "string"
+    ) {
+      const s = talent[0].trim();
+      if (s.startsWith("[") && s.endsWith("]")) {
+        try {
+          talent = JSON.parse(s);
+        } catch {
+          /* ignore */
+        }
       }
     }
 
+    // If it's a plain JSON string or CSV string
+    if (typeof talent === "string") {
+      const s = talent.trim();
+      if (s.startsWith("[") && s.endsWith("]")) {
+        try {
+          talent = JSON.parse(s);
+        } catch {
+          talent = s.split(",");
+        }
+      } else {
+        talent = s.split(",");
+      }
+    }
+
+    // Ensure array of clean strings, no duplicates
+    talent = (Array.isArray(talent) ? talent : [])
+      .map((id) => String(id).trim())
+      .filter(Boolean);
+    talent = [...new Set(talent)];
     // Handle files
     const logo = req.files?.logo?.[0]?.path || "";
     const eventcover = req.files?.event_cover?.[0]?.path || "";
@@ -130,7 +160,7 @@ export const createEvent = async (req, res) => {
       datetime,
       addedby: LoginUser.role,
       title,
-      talent: talentData,
+      talent: talent,
       summary,
       details,
       event_type,
