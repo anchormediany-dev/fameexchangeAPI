@@ -68,7 +68,18 @@ export const getNetwothData = async (req, res) => {
   const userId = req.user._id;
   try {
     const data = await Networth.findOne({ userId });
-    console.log(data);
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+export const getAllNetwothData = async (req, res) => {
+  try {
+    const data = await Networth.find().populate(
+      "userId",
+      "email name image role is_rep_have talent token_brand_name representation biography datetime rep_type"
+    );
     res.status(201).json({ success: true, data });
   } catch (error) {
     console.log(error);

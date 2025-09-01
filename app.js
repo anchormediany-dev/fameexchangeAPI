@@ -22,6 +22,7 @@ import sessionRoutes from "./routes/sessionRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import newsletterRoutes from "./routes/newsletterRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
+import faqRoutes from "./routes/faqRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -53,6 +54,7 @@ app.use("/api/sessions", sessionRoutes);
 app.use("/api/talent-confirmation", talentConfirmationRoutes);
 app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/team", teamRoutes);
+app.use("/api/faqs", faqRoutes);
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {

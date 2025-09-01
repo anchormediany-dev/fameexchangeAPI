@@ -193,8 +193,25 @@ export const createEvent = async (req, res) => {
 // GET ALL
 export const getAllEvents = async (req, res) => {
   try {
-    const events = await Event.find().sort({ createdAt: -1 });
-    res.status(200).json({ success: true, data: events });
+    const events = await Event.find().sort({ createdAt: -1 }).lean();
+
+    const withPrefs = events.map((event) => {
+      const prefs = Array.isArray(event.prefrences) ? event.prefrences : [];
+
+      return {
+        ...event,
+        prefrences: {
+          ...event.prefrences, // keep original if needed
+          interested: prefs.filter((p) => p.prefrences === "interested").length,
+          notinterested: prefs.filter((p) => p.prefrences === "notinterested")
+            .length,
+          attending: prefs.filter((p) => p.prefrences === "attending").length,
+          live: prefs.filter((p) => p.event_type === "live").length,
+          virtual: prefs.filter((p) => p.event_type === "virtual").length,
+        },
+      };
+    });
+    res.status(200).json({ success: true, data: withPrefs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -209,6 +226,7 @@ export const getEventById = async (req, res) => {
         "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
         // "-password -__v -updatedAt -createdAt -isDeleted -is_over_18 -agreed_terms -is_verified -OTP_code -is_login_facebook -is_login_google -isAdmin -password"
       )
+      .populate("talent", "email name role")
       .lean();
     if (!event)
       return res.status(404).json({ success: false, error: "Event not found" });
