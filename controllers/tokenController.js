@@ -1,4 +1,4 @@
-import Token from "../models/Token.js";
+import Token from "../models/token.js";
 import User from "../models/user.js";
 
 // Create new token

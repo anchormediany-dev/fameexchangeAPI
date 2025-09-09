@@ -1,6 +1,6 @@
 // controllers/newsletterController.js
 import crypto from "crypto";
-import Newsletter from "../models/Newsletter.js";
+import Newsletter from "../models/newsLetter.js";
 import User from "../models/user.js";
 
 const isValidEmail = (email = "") =>

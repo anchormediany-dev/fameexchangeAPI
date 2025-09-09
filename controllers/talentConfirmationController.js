@@ -1,4 +1,4 @@
-import FanInverseRequestModel from "../models/FanInverseRequestModel.js";
+import FanInverseRequestModel from "../models/fanInverseRequestModel.js";
 import Notification from "../models/notificationModel.js";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
 import User from "../models/user.js";
