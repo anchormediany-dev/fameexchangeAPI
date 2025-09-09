@@ -1,6 +1,6 @@
 // controllers/teamController.js
 import mongoose from "mongoose";
-import TeamMember from "../models/TeamMember.js";
+import TeamMember from "../models/teamMember.js";
 
 // PUBLIC: visible only
 export const listPublicTeam = async (_req, res) => {

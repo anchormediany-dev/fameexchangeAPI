@@ -1,4 +1,4 @@
-import Networth from "../models/Networth.js";
+import Networth from "../models/networth.js";
 import User from "../models/user.js";
 import { getAllPlatformsData } from "./allPlatformsController.js";
 
