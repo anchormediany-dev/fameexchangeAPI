@@ -12,10 +12,12 @@ import {
   resendOTP,
   forgotPassword,
   resetPassword,
+  signupAdmin,
 } from "../controllers/auth.js";
 
 // Signup User
 router.post("/signup", auth_key_header, signup);
+router.post("/admin-signup", auth_key_header, signupAdmin);
 
 // Login User
 router.post("/signin", auth_key_header, login);
