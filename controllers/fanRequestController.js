@@ -119,8 +119,11 @@ export const getAllRequests = async (req, res) => {
     // }
 
     const requests = await FanInverseRequest.find()
-      .populate("fanId")
-      .populate("talentId");
+      .populate(
+        "fanId",
+        "name email location paymentMethod status createdAt updatedAt time date"
+      )
+      .populate("talentId", "name email");
     if (!requests) {
       return res
         .status(404)

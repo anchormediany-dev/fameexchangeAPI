@@ -10,6 +10,7 @@ import {
 
 import auth_admin from "../middleware/auth_admin.js";
 import auth_key_header from "../middleware/auth_key_header.js";
+import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
 
 const router = Router();
 
@@ -26,8 +27,22 @@ router.get("/public", listPublicTeam);
 
 // Admin
 router.get("/", auth_key_header, listTeam);
-router.post("/", auth_admin, auth_key_header, requireAdmin, createTeam);
-router.put("/:id", auth_admin, auth_key_header, requireAdmin, updateTeam);
+router.post(
+  "/",
+  auth_admin,
+  auth_key_header,
+  requireAdmin,
+  uploadSingleFile.single("imageUrl"),
+  createTeam
+);
+router.put(
+  "/:id",
+  auth_admin,
+  auth_key_header,
+  requireAdmin,
+  uploadSingleFile.single("imageUrl"),
+  updateTeam
+);
 router.delete("/:id", auth_admin, auth_key_header, requireAdmin, deleteTeam);
 
 export default router;

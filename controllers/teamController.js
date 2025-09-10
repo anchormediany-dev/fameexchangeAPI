@@ -26,6 +26,24 @@ export const listTeam = async (_req, res) => {
   }
 };
 
+const toPublicUrl = (filename) => `/uploads/team/${filename}`;
+const toAbsPath = (publicUrl) => {
+  // publicUrl like: /uploads/team/xxx.png  -> absolute path on disk
+  const rel = publicUrl.startsWith("/") ? publicUrl.slice(1) : publicUrl;
+  return path.join(process.cwd(), rel);
+};
+
+const parseBool = (v, fallback = true) => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string")
+    return ["true", "1", "yes", "on"].includes(v.toLowerCase());
+  return fallback;
+};
+const parseNum = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
 // ADMIN: create
 export const createTeam = async (req, res) => {
   try {
@@ -44,11 +62,17 @@ export const createTeam = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Name and title are required" });
     }
+
+    // Prefer uploaded file over imageUrl string
+    const finalImageUrl = req.file
+      ? toPublicUrl(req.file.filename)
+      : imageUrl || "";
+
     const created = await TeamMember.create({
       name,
       title,
       bio,
-      imageUrl,
+      imageUrl: finalImageUrl,
       isVisible,
       order,
       addedBy: userId ? userId : "",
@@ -70,12 +94,29 @@ export const updateTeam = async (req, res) => {
     const updates = {};
     for (const k of allowed) if (k in req.body) updates[k] = req.body[k];
 
+    const existing = await TeamMember.findById(id);
+    if (!existing)
+      return res.status(404).json({ success: false, message: "Not found" });
+
+    // If a new file is uploaded, use it and later delete the old image (if different)
+    let oldImageUrl = existing.imageUrl || "";
+    if (req.file) {
+      updates.imageUrl = toPublicUrl(req.file.filename);
+    }
+
     const updated = await TeamMember.findByIdAndUpdate(id, updates, {
       new: true,
       runValidators: true,
     });
-    if (!updated)
-      return res.status(404).json({ success: false, message: "Not found" });
+
+    // Delete previous image if we replaced it
+    if (req.file && oldImageUrl && oldImageUrl !== updated.imageUrl) {
+      try {
+        await fs.unlink(toAbsPath(oldImageUrl));
+      } catch {
+        // ignore missing file or unlink errors
+      }
+    }
 
     res.json({ success: true, message: "Updated", data: updated });
   } catch (e) {
