@@ -9,6 +9,8 @@ import Session from "../models/sessionModel.js";
 import Friend from "../models/friendModel.js";
 import Networth from "../models/networth.js";
 import fanInverseRequestModel from "../models/fanInverseRequestModel.js";
+import TeamMember from "../models/teamMember.js";
+import sessionModel from "../models/sessionModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -542,6 +544,27 @@ export const getTalentOverview = async (req, res) => {
     });
   } catch (err) {
     console.error("getTalentOverview error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const adminDashboard = async (req, res) => {
+  try {
+    const users = await User.find().sort({ createdAt: -1 });
+    const events = await eventModel.countDocuments().sort({ createdAt: -1 });
+    const teammembers = await TeamMember.find().sort({ createdAt: -1 });
+    const sessions = await sessionModel.find().sort({ createdAt: -1 });
+    return res.json({
+      success: true,
+      data: {
+        users,
+        totalEvents: events,
+        teamMembers: teammembers,
+        sessions,
+      },
+    });
+  } catch (err) {
+    console.log(err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };

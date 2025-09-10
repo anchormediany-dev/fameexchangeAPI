@@ -11,6 +11,7 @@ import {
   deleteUserImage,
   getTalentOverview,
   getAllTalentUsers,
+  adminDashboard,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -26,6 +27,7 @@ router.post(
 );
 
 // Get all users
+router.get("/admin-dashboard", auth_key_header, auth_admin, adminDashboard);
 router.get("/getusers", auth_key_header, auth_token, getAllUsers);
 router.get("/get-talent", auth_key_header, auth_token, getAllTalentUsers);
 
