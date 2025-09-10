@@ -7,6 +7,8 @@ import path from "path";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
 import Session from "../models/sessionModel.js";
 import Friend from "../models/friendModel.js";
+import Networth from "../models/networth.js";
+import fanInverseRequestModel from "../models/fanInverseRequestModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -433,6 +435,13 @@ export const getTalentOverview = async (req, res) => {
       .populate({ path: "requestId" })
       .populate({ path: "talentId", select: publicUserProjection })
       .lean();
+    const pendingReq = await fanInverseRequestModel
+      .find({ talentId })
+      .populate({ path: "fanId" })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // console.log("pendingReq", pendingReq);
 
     // --- Friendships (per your schema: userId, friendId, status) ---
     const friendshipsQ = Friend.find({
@@ -443,12 +452,14 @@ export const getTalentOverview = async (req, res) => {
       .lean();
 
     // Wait for profile (used for event matching by stage_name as a fallback)
-    const [profile, sessions, confirmations, friendships] = await Promise.all([
-      profileQ,
-      sessionsQ,
-      confirmationsQ,
-      friendshipsQ,
-    ]);
+    const [profile, sessions, pending, confirmations, friendships] =
+      await Promise.all([
+        profileQ,
+        sessionsQ,
+        confirmationsQ,
+        friendshipsQ,
+        pendingReq,
+      ]);
 
     if (!profile) {
       return res
@@ -505,6 +516,10 @@ export const getTalentOverview = async (req, res) => {
       .populate({ path: "prefrences.users", select: publicUserProjection }) // attendees
       .lean();
 
+    const networth = await Networth.find({ userId: talentId });
+
+    // console.log("networth", networth);
+
     return res.json({
       success: true,
       data: {
@@ -513,6 +528,8 @@ export const getTalentOverview = async (req, res) => {
         confirmations,
         // Friends as user docs (for UI), and raw edges if you need meta (notes/status)
         friends,
+        networth,
+        pending,
         // friendships,
         // Events where this talent is creator, tagged in `talent[]`, or attending
         events,
