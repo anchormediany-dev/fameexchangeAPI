@@ -28,7 +28,7 @@ const uploadFields = upload.fields([
 router.post("/", uploadFields, auth_key_header, auth_admin, createEvent);
 router.get("/", auth_key_header, getAllEvents);
 router.get("/user", auth_key_header, auth_token, getEventUserById);
-router.get("/featured-upcoming", getFeaturedUpcomingEvents);
+router.get("/featured-upcoming", auth_key_header, getFeaturedUpcomingEvents);
 // Default month view (current month) OR search by name.
 // Examples:
 //   GET /api/events/monthly                -> all events this month (e.g., August)
@@ -36,7 +36,7 @@ router.get("/featured-upcoming", getFeaturedUpcomingEvents);
 //   GET /api/events/monthly?q=concert      -> similar-name events (any month)
 //   GET /api/events/monthly?q=concert&withinMonth=true&month=8&year=2025
 //   GET /api/events/monthly?status=active&featured=true
-router.get("/search", getMonthlyEvents);
+router.get("/search", auth_key_header, getMonthlyEvents);
 // Add/Update a user's preference for an event
 router.post(
   "/:eventId/preference",
@@ -45,7 +45,7 @@ router.post(
   setEventPreference
 );
 router.get("/:id", auth_key_header, getEventById);
-router.put("/:id", uploadFields, auth_key_header, auth_token, updateEvent);
-router.delete("/:id", auth_key_header, auth_token, deleteEvent);
+router.put("/:id", uploadFields, auth_key_header, auth_admin, updateEvent);
+router.delete("/:id", auth_key_header, auth_admin, deleteEvent);
 
 export default router;
