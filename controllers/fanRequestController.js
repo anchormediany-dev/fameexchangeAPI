@@ -109,16 +109,16 @@ export const createFanRequest = async (req, res) => {
 // GET ALL
 export const getAllRequests = async (req, res) => {
   try {
-    const fanId = req.user?._id;
+    // const fanId = req.user?._id;
 
-    if (!fanId) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing fan ID from token",
-      });
-    }
+    // if (!fanId) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Missing fan ID from token",
+    //   });
+    // }
 
-    const requests = await FanInverseRequest.find({ fanId })
+    const requests = await FanInverseRequest.find()
       .populate("fanId")
       .populate("talentId");
     if (!requests) {

@@ -10,11 +10,12 @@ import {
 } from "../controllers/fanRequestController.js";
 import auth_token from "../middleware/auth_token.js";
 import auth_key_header from "../middleware/auth_key_header.js";
+import auth_admin from "../middleware/auth_admin.js";
 
 const router = express.Router();
 
 router.post("/", auth_token, auth_key_header, createFanRequest);
-router.get("/", auth_token, auth_key_header, getAllRequests);
+router.get("/", auth_admin, auth_key_header, getAllRequests);
 router.get("/get-all", auth_token, auth_key_header, getOverAllRequests);
 router.get("/:id", auth_token, auth_key_header, getRequestById);
 router.put("/:id", auth_token, auth_key_header, updateFanRequest);
