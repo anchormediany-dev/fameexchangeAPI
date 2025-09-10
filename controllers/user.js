@@ -436,7 +436,11 @@ export const getTalentOverview = async (req, res) => {
       .populate({ path: "talentId", select: publicUserProjection })
       .lean();
     const pendingReq = await fanInverseRequestModel
-      .find({ talentId })
+      .find({
+        talentId,
+        status: "pending",
+        // ispaid: true,
+      })
       .populate({ path: "fanId" })
       .sort({ createdAt: -1 })
       .lean();
@@ -452,7 +456,7 @@ export const getTalentOverview = async (req, res) => {
       .lean();
 
     // Wait for profile (used for event matching by stage_name as a fallback)
-    const [profile, sessions, pending, confirmations, friendships] =
+    const [profile, sessions, confirmations, friendships, pending] =
       await Promise.all([
         profileQ,
         sessionsQ,
@@ -530,6 +534,7 @@ export const getTalentOverview = async (req, res) => {
         friends,
         networth,
         pending,
+        // pendingReqs,
         // friendships,
         // Events where this talent is creator, tagged in `talent[]`, or attending
         events,
