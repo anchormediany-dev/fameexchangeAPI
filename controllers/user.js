@@ -553,7 +553,10 @@ export const adminDashboard = async (req, res) => {
     const users = await User.find().sort({ createdAt: -1 });
     const events = await eventModel.countDocuments().sort({ createdAt: -1 });
     const teammembers = await TeamMember.find().sort({ createdAt: -1 });
-    const sessions = await sessionModel.find().sort({ createdAt: -1 });
+    const sessions = await sessionModel
+      .find()
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email images biography");
     return res.json({
       success: true,
       data: {
