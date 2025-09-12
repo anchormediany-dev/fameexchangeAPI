@@ -14,7 +14,7 @@ export const getFacebookFollowers = async (req, res) => {
     const page = await browser.newPage();
     const result = await scrapeFacebookFollowers(page, url);
     await browser.close();
-    console.log("facebook result", result);
+    // console.log("facebook result", result);
 
     res.json(result);
   } catch (err) {

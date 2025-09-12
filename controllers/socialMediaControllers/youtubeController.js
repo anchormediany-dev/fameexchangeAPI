@@ -1,32 +1,62 @@
+// controllers/getYoutubeSubscribers.js
 import puppeteer from "puppeteer";
 import scrapeYoutube from "../../scrapers/youtube.js";
 
 export const getYoutubeSubscribers = async (req, res) => {
   const { url } = req.body;
 
-  console.log("url youtube", url);
   // Validate the YouTube URL
-  if (!url || !url.includes("youtube.com")) {
-    return res.status(400).json({ error: "Valid YouTube URL is required" });
+  if (
+    !url ||
+    !/^https?:\/\/(www\.)?(youtube\.com|m\.youtube\.com)\/.+/.test(url)
+  ) {
+    return res
+      .status(400)
+      .json({ error: "A valid YouTube channel URL is required" });
   }
 
+  let browser;
   try {
-    // Launch Puppeteer browser in non-headless mode (this opens the browser window for debugging)
-    const browser = await puppeteer.launch({ headless: false }); // <-- headless: false for visual debugging
+    // Launch Puppeteer — still used (as fallback and to keep your signature),
+    // but we'll block heavy resources to keep it light.
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
+      defaultViewport: { width: 1280, height: 800 },
+    });
+
     const page = await browser.newPage();
 
-    // Call the scraping function
+    // Block images/CSS/fonts for speed
+    await page.setRequestInterception(true);
+    page.on("request", (reqInt) => {
+      const type = reqInt.resourceType();
+      if (["image", "stylesheet", "font"].includes(type)) return reqInt.abort();
+      reqInt.continue();
+    });
+
+    // Scrape (uses optimized HTTP-first internally, then page fallback)
     const result = await scrapeYoutube(page, url);
 
-    // Close the browser after scraping
-    await browser.close();
-
-    // Send the result back to the client
-    res.json(result);
+    return res.json({ success: true, ...result });
   } catch (err) {
-    // Handle any errors
-    res
+    console.error("YouTube scrape error:", err);
+    return res
       .status(500)
-      .json({ error: "Failed to scrape YouTube", details: err.message });
+      .json({
+        success: false,
+        error: "Failed to fetch YouTube subscribers",
+        details: err.message,
+      });
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch {}
+    }
   }
 };

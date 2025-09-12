@@ -14,7 +14,7 @@ export default async function getTwitterFollowerCount(username) {
     );
     await page.setViewport({ width: 1280, height: 800 });
 
-    console.log(`Navigating to @${username}'s profile...`);
+    // console.log(`Navigating to @${username}'s profile...`);
     await page.goto(`https://twitter.com/${username}`, {
       waitUntil: "networkidle2",
       timeout: 100000,
@@ -23,7 +23,7 @@ export default async function getTwitterFollowerCount(username) {
     // Debug: Save full HTML for inspection
     const html = await page.content();
     fs.writeFileSync(`${username}_debug.html`, html);
-    console.log(`Saved full HTML to ${username}_debug.html`);
+    // console.log(`Saved full HTML to ${username}_debug.html`);
 
     // Wait for profile to load
     await page.waitForSelector('div[data-testid="UserName"]', {
@@ -59,9 +59,9 @@ export default async function getTwitterFollowerCount(username) {
       };
     });
 
-    console.log("DEBUG INFORMATION:");
-    console.log("All potential follower links:", debugInfo.allLinks);
-    console.log("All count span elements:", debugInfo.countSpans);
+    // console.log("DEBUG INFORMATION:");
+    // console.log("All potential follower links:", debugInfo.allLinks);
+    // console.log("All count span elements:", debugInfo.countSpans);
 
     // Try to extract follower count
     const followerCount = await page.evaluate(() => {
@@ -118,7 +118,7 @@ export default async function getTwitterFollowerCount(username) {
       return null;
     });
 
-    console.log("FOLLOWER COUNT EXTRACTION RESULT:");
+    // console.log("FOLLOWER COUNT EXTRACTION RESULT:");
     console.dir(followerCount, { depth: null, colors: true });
 
     if (!followerCount?.value) {
@@ -126,7 +126,7 @@ export default async function getTwitterFollowerCount(username) {
       throw new Error("Follower count element not found");
     }
 
-    console.log(`@${username} has ${followerCount.value} followers`);
+    // console.log(`@${username} has ${followerCount.value} followers`);
     const sanitizedCount = followerCount.value
       ? convertInstagramFollowerCount(followerCount.value)
       : null;

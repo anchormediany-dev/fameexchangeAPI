@@ -25,7 +25,8 @@ export const saveNetworthData = async (req, res) => {
 
     const urls = { youtube, twitter, instagram, facebook, tiktok, snapchat };
 
-    const userSocialMediaData = await User.findByIdAndUpdate(
+    // Update user social media links
+    await User.findByIdAndUpdate(
       userId,
       {
         social_youtube: youtube,
@@ -37,6 +38,7 @@ export const saveNetworthData = async (req, res) => {
       },
       { new: true }
     );
+
     const { totalFollowers, netWorth, platforms } = await getAllPlatformsData(
       urls
     );
@@ -46,6 +48,22 @@ export const saveNetworthData = async (req, res) => {
       socialMedia[platform] = { url, ...rest };
     });
 
+    // 🔑 Check if net worth already exists for this user
+    let existingEntry = await Networth.findOne({ userId });
+
+    if (existingEntry) {
+      // Update existing entry
+      existingEntry.fullName = fullName;
+      existingEntry.tokenBrand = { brandName: tokenBrandName, tokenName };
+      existingEntry.socialMedia = socialMedia;
+      existingEntry.totalFollowers = totalFollowers;
+      existingEntry.netWorth = netWorth;
+
+      await existingEntry.save();
+      return res.status(200).json({ success: true, data: existingEntry });
+    }
+
+    // Otherwise create a new entry
     const newEntry = new Networth({
       userId,
       fullName,

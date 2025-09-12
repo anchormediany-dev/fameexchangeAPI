@@ -22,7 +22,7 @@ export const getTiktokFollowers = async (req, res) => {
     );
 
     const result = await scrapeTiktok(page, url);
-    console.log("tiktok result", result);
+    // console.log("tiktok result", result);
     await browser.close();
 
     res.json(result);

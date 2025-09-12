@@ -63,9 +63,10 @@ export const createTeam = async (req, res) => {
         .json({ success: false, message: "Name and title are required" });
     }
 
+    console.log(req.file);
     // Prefer uploaded file over imageUrl string
     const finalImageUrl = req.file
-      ? toPublicUrl(req.file.filename)
+      ? toPublicUrl(req.file.path)
       : imageUrl || "";
 
     const created = await TeamMember.create({
