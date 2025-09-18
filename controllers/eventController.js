@@ -478,9 +478,9 @@ export const getMonthlyEvents = async (req, res) => {
       month = (now.getMonth() + 1).toString(), // 1..12
       year = now.getFullYear().toString(),
       q,
-      withinMonth = "false", // if true, keep month filter when searching
-      status, // optional (e.g., "active")
-      featured, // "true" | "false" optional
+      withinMonth = "false",
+      status,
+      featured,
     } = req.query;
 
     const filter = {};
@@ -488,15 +488,11 @@ export const getMonthlyEvents = async (req, res) => {
     if (featured === "true") filter.is_featured = true;
     if (featured === "false") filter.is_featured = { $in: [false, null] };
 
-    // Base: month range
     const { start, end } = getMonthRange(month, year);
     let applyMonth = true;
 
-    // If searching by name, default to ignore month filter (per requirement)
     if (q && q.trim()) {
       applyMonth = toBool(withinMonth, false);
-
-      // Similar names (case-insensitive). If you have a text index on title, you can swap to $text.
       const rx = new RegExp(escapeRegex(q.trim()), "i");
       filter.title = rx;
     }
@@ -509,14 +505,30 @@ export const getMonthlyEvents = async (req, res) => {
       { $match: filter },
       { $sort: { datetime: 1 } },
 
-      // Populate user data
+      // ✅ FIXED LOOKUP: use let + pipeline (NO localField/foreignField)
       {
         $lookup: {
           from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "userId",
+          let: { uid: "$userId" },
           pipeline: [
+            {
+              $match: {
+                $expr: {
+                  // If userId is already an ObjectId, this still works.
+                  // If it's a string, convert to ObjectId for comparison.
+                  $eq: [
+                    "$_id",
+                    {
+                      $cond: [
+                        { $eq: [{ $type: "$$uid" }, "objectId"] },
+                        "$$uid",
+                        { $toObjectId: "$$uid" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
             {
               $project: {
                 name: 1,
@@ -535,13 +547,15 @@ export const getMonthlyEvents = async (req, res) => {
               },
             },
           ],
+          as: "userId",
         },
       },
       { $unwind: { path: "$userId", preserveNullAndEmptyArrays: true } },
 
-      // ✅ ensure prefrences is always an array
+      // Ensure prefrences is always an array
       { $set: { prefrences: { $ifNull: ["$prefrences", []] } } },
-      // Add flat counts
+
+      // Flat counts
       {
         $addFields: {
           interested: {
@@ -594,6 +608,7 @@ export const getMonthlyEvents = async (req, res) => {
     ];
 
     const events = await Event.aggregate(pipeline);
+
     return res.status(200).json({
       success: true,
       month: applyMonth ? Number(month) : null,
