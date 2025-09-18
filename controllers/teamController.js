@@ -102,7 +102,7 @@ export const updateTeam = async (req, res) => {
     // If a new file is uploaded, use it and later delete the old image (if different)
     let oldImageUrl = existing.imageUrl || "";
     if (req.file) {
-      updates.imageUrl = toPublicUrl(req.file.filename);
+      updates.imageUrl = toPublicUrl(req.file.path);
     }
 
     const updated = await TeamMember.findByIdAndUpdate(id, updates, {
