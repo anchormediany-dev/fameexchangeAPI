@@ -190,28 +190,74 @@ export const createEvent = async (req, res) => {
   }
 };
 
-// GET ALL
+//  GET /events?page=1&limit=10
 export const getAllEvents = async (req, res) => {
   try {
-    const events = await Event.find().sort({ createdAt: -1 }).lean();
+    // --- pagination inputs ---
+    const rawPage = parseInt(req.query.page, 10);
+    const rawLimit = parseInt(req.query.limit, 10);
 
-    const withPrefs = events.map((event) => {
-      const prefs = Array.isArray(event.prefrences) ? event.prefrences : [];
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    // default 10, hard-cap to prevent abuse (tweak as you like)
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 10;
+    const skip = (page - 1) * limit;
+
+    // --- totals (for meta) ---
+    const total = await Event.countDocuments({});
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    // --- query (latest first) ---
+    const events = await Event.find({})
+      .sort({ createdAt: -1 }) // newest first
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // --- shape preferences counts safely ---
+    const data = events.map((event) => {
+      const prefsArr = Array.isArray(event.prefrences) ? event.prefrences : [];
+      const interested = prefsArr.filter(
+        (p) => p?.prefrences === "interested"
+      ).length;
+      const notinterested = prefsArr.filter(
+        (p) => p?.prefrences === "notinterested"
+      ).length;
+      const attending = prefsArr.filter(
+        (p) => p?.prefrences === "attending"
+      ).length;
+      const live = prefsArr.filter((p) => p?.event_type === "live").length;
+      const virtual = prefsArr.filter(
+        (p) => p?.event_type === "virtual"
+      ).length;
 
       return {
         ...event,
         prefrences: {
-          ...event.prefrences, // keep original if needed
-          interested: prefs.filter((p) => p.prefrences === "interested").length,
-          notinterested: prefs.filter((p) => p.prefrences === "notinterested")
-            .length,
-          attending: prefs.filter((p) => p.prefrences === "attending").length,
-          live: prefs.filter((p) => p.event_type === "live").length,
-          virtual: prefs.filter((p) => p.event_type === "virtual").length,
+          ...event.prefrences, // keep original object fields if any
+          interested,
+          notinterested,
+          attending,
+          live,
+          virtual,
         },
       };
     });
-    res.status(200).json({ success: true, data: withPrefs });
+
+    return res.status(200).json({
+      success: true,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        prevPage: page > 1 ? page - 1 : null,
+        nextPage: page < totalPages ? page + 1 : null,
+      },
+      data,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

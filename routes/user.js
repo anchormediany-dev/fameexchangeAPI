@@ -28,17 +28,17 @@ router.post(
 
 // Get all users
 router.get("/admin-dashboard", auth_key_header, auth_admin, adminDashboard);
-router.get("/getusers", auth_key_header, auth_token, getAllUsers);
-router.get("/get-talent", auth_key_header, auth_token, getAllTalentUsers);
+router.get("/getusers", auth_key_header, getAllUsers);
+router.get("/get-talent", auth_key_header, getAllTalentUsers);
 
 // Get specific user by ID
-router.get("/get/:id", auth_key_header, auth_token, getUserById);
+router.get("/get/:id", auth_key_header, getUserById);
 
 // Self (talent must be logged in)
 router.get("/overview", auth_key_header, auth_token, getTalentOverview);
 
 // Admin/ops can fetch by talent id (protect with your admin middleware if needed)
-router.get("/:id/overview", auth_key_header, auth_token, getTalentOverview);
+router.get("/:id/overview", auth_key_header, getTalentOverview);
 
 // Update a specific user
 router.put("/update/:id", auth_key_header, auth_token, updateUserById);
