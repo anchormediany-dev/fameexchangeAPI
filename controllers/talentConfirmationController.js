@@ -6,13 +6,19 @@ import { sendMail } from "../utils/mailer.js";
 
 export const confirmRequest = async (req, res) => {
   try {
-    const { requestId, confirmedDate, time, location, fanName, status } =
-      req.body;
-
+    const {
+      requestId,
+      confirmedDate,
+      time,
+      location,
+      fanName,
+      status,
+      declineReason,
+    } = req.body;
     const talentId = req.user._id;
 
-    const talentUser = await User.findById({ _id: talentId });
-
+    // Basic checks
+    const talentUser = await User.findById(talentId);
     if (!talentUser) {
       return res
         .status(400)
@@ -24,43 +30,53 @@ export const confirmRequest = async (req, res) => {
         .json({ success: false, error: "Talent not exists" });
     }
 
-    if (
-      !requestId ||
-      !confirmedDate ||
-      !time ||
-      !location ||
-      !fanName ||
-      !status
-    ) {
+    // Require common fields
+    if (!requestId || !fanName || !status) {
       return res.status(400).json({
         success: false,
-        message:
-          "Missing required fields: fanRequestId, confirmedDate, time, location, fanName, status",
+        message: "Missing required fields: requestId, fanName, status",
       });
     }
 
-    // Find fan user
-    const fanUser = await User.findOne({ name: fanName });
-    console.log(fanUser);
-    if (!fanUser || fanUser.role !== "FAN") {
+    // Normalize status
+    const raw = String(status).toLowerCase().trim();
+    const normalizedStatus =
+      raw === "accepted" ? "accepted" : raw === "decline" ? "decline" : null;
+
+    if (!normalizedStatus) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid status. Use 'accepted' or 'decline'.",
+      });
+    }
+
+    // If accepting, we need the date/time/location
+    if (normalizedStatus === "accepted") {
+      if (!confirmedDate || !time || !location) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "For accepted status, confirmedDate, time, and location are required",
+        });
+      }
+    }
+
+    // Find fan by provided name (soft validation)
+    const fanUserByName = await User.findOne({ name: fanName });
+    if (!fanUserByName || fanUserByName.role !== "FAN") {
       return res.status(400).json({
         success: false,
         error: "Fan with the provided name does not exist or is not a FAN",
       });
     }
 
-    // Validate that the request exists
+    // Validate the request exists and belongs to this talent
     const fanRequest = await FanInverseRequestModel.findById(requestId);
     if (!fanRequest) {
-      return res.status(404).json({
-        success: false,
-        message: "Fan request not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Fan request not found" });
     }
-
-    // console.log("fanRequest", fanRequest);
-
-    // 🔐 Ensure the confirming talent owns this request
     if (!fanRequest.talentId.equals(talentId)) {
       return res.status(403).json({
         success: false,
@@ -68,17 +84,16 @@ export const confirmRequest = async (req, res) => {
       });
     }
 
-    // Get the actual fan from the request
+    // Get the actual fan from the request (hard validation)
     const fanUserData = await User.findById(fanRequest.fanId);
-    if (!fanUser || fanUser.role !== "FAN") {
+    if (!fanUserData || fanUserData.role !== "FAN") {
       return res.status(400).json({
         success: false,
         error: "Fan in the request is invalid or not a FAN",
       });
     }
 
-    console.log(fanUserData.name, fanName);
-    // ✅ Compare provided fanName with the actual fan's name in the request
+    // Ensure provided fanName matches the request's fan
     if (
       fanUserData.name.trim().toLowerCase() !== fanName.trim().toLowerCase()
     ) {
@@ -87,46 +102,102 @@ export const confirmRequest = async (req, res) => {
         error: "Provided fan name does not match the fan in the request",
       });
     }
-    // console.log("fanRequest", fanRequest);
-    // console.log("fanUser", fanUser);
-    // const fanUser = await User.findById(fanRequest.fanId);
-    const data = {
-      talentId: talentId,
-      ...req.body,
+
+    // Build decision payload (we'll create a record for either outcome)
+    const decisionPayload = {
+      talentId,
+      fanId: fanUserData._id,
+      requestId: fanRequest._id,
+      fanName: fanUserByName.name,
+      status: normalizedStatus, // 'accepted' | 'declined'
+      confirmedDate:
+        normalizedStatus === "accepted" ? confirmedDate : undefined,
+      time: normalizedStatus === "accepted" ? time : undefined,
+      location: normalizedStatus === "accepted" ? location : undefined,
+      declineReason:
+        normalizedStatus === "decline" ? declineReason || null : undefined,
     };
-    const confirmation = await TalentConfirmation.create(data);
-    fanRequest.status = "accepted";
+
+    const confirmation = await TalentConfirmation.create(decisionPayload);
+
+    // Update request status
+    fanRequest.status = normalizedStatus; // 'accepted' or 'declined'
     await fanRequest.save();
-    // console.log("fanUser", fanUser._id);
-    // console.log("talentId", talentId);
-    await Notification.create([
-      {
-        userId: fanUser._id,
-        description: `Your session was confirmed by ${talentUser.name} for ${confirmedDate} at ${time}.`,
-        category: "session",
-        referenceModel: "TalentConfirmation",
-        referenceId: confirmation._id,
-      },
-      {
-        userId: talentId,
-        description: `You confirmed a session with ${fanUser.name}.`,
-        category: "session",
-        referenceModel: "TalentConfirmation",
-        referenceId: confirmation._id,
-      },
-    ]);
 
-    await sendMail(
-      fanUser.email,
-      "Session Confirmed",
-      `
-        <p>Hi ${fanUser.name},</p>
-        <p>Your session with ${talentUser.name} has been <strong>confirmed</strong>.</p>
-        <p><strong>Date:</strong> ${confirmedDate}<br><strong>Time:</strong> ${time}<br><strong>Location:</strong> ${location}</p>
-      `
-    );
+    // Notifications + Emails
+    if (normalizedStatus === "accepted") {
+      // Fan notification
+      await Notification.create([
+        {
+          userId: fanUserData._id,
+          description: `Your session was confirmed by ${talentUser.name} for ${confirmedDate} at ${time}.`,
+          category: "session",
+          referenceModel: "TalentConfirmation",
+          referenceId: confirmation._id,
+        },
+        {
+          userId: talentId,
+          description: `You confirmed a session with ${fanUserData.name}.`,
+          category: "session",
+          referenceModel: "TalentConfirmation",
+          referenceId: confirmation._id,
+        },
+      ]);
 
-    res.status(201).json({ success: true, data: confirmation });
+      // Fan email
+      await sendMail(
+        fanUserData.email,
+        "Session Confirmed",
+        `
+          <p>Hi ${fanUserData.name},</p>
+          <p>Your session with ${talentUser.name} has been <strong>confirmed</strong>.</p>
+          <p><strong>Date:</strong> ${confirmedDate}<br><strong>Time:</strong> ${time}<br><strong>Location:</strong> ${location}</p>
+        `
+      );
+    } else {
+      // Declined scenario
+      const declineMsg = declineReason ? ` Reason: ${declineReason}` : "";
+
+      // Notifications
+      await Notification.create([
+        {
+          userId: fanUserData._id,
+          description: `Your session request was declined by ${
+            talentUser.name
+          }.${declineMsg ? declineMsg : ""}`,
+          category: "session",
+          referenceModel: "TalentConfirmation",
+          referenceId: confirmation._id,
+        },
+        {
+          userId: talentId,
+          description: `You declined the session request from ${fanUserData.name}.`,
+          category: "session",
+          referenceModel: "TalentConfirmation",
+          referenceId: confirmation._id,
+        },
+      ]);
+
+      // Email
+      await sendMail(
+        fanUserData.email,
+        "Session Declined",
+        `
+          <p>Hi ${fanUserData.name},</p>
+          <p>Your session request with ${
+            talentUser.name
+          } has been <strong>declined</strong>.</p>
+          ${
+            declineReason
+              ? `<p><strong>Reason:</strong> ${declineReason}</p>`
+              : ""
+          }
+          <p>You may request a different time or choose another talent.</p>
+        `
+      );
+    }
+
+    return res.status(201).json({ success: true, data: confirmation });
   } catch (error) {
     console.error("Error confirming request:", error);
     res.status(500).json({ success: false, message: error.message });

@@ -12,6 +12,7 @@ export const createSession = async (req, res) => {
       sessionTime,
       bufferTime,
       timeZone,
+      where,
       accessType,
     } = req.body;
 
@@ -23,6 +24,7 @@ export const createSession = async (req, res) => {
       bufferTime,
       timeZone,
       accessType,
+      where,
       createdBy: req.user._id, // comes from authMiddleware
     });
 

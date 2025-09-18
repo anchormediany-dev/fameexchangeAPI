@@ -29,6 +29,9 @@ const sessionSchema = new mongoose.Schema(
       type: String, // e.g. "Africa/Abidjan"
       required: true,
     },
+    where: {
+      type: String,
+    },
     accessType: {
       type: String,
       enum: ["onsite", "online"],
