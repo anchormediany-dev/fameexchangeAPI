@@ -605,7 +605,7 @@ export const getMonthlyEvents = async (req, res) => {
     console.error("Error fetching monthly/search events:", error);
     return res
       .status(500)
-      .json({ success: false, error: "Internal server error" });
+      .json({ success: false, error: "Internal server error", error });
   }
 };
 
