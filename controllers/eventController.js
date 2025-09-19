@@ -332,7 +332,7 @@ export const createEvent = async (req, res) => {
           city: location || "",
         });
 
-        console.log("computedCoords", computedCoords);
+        // console.log("computedCoords", computedCoords);
       } catch (geoErr) {
         return res.status(400).json({
           success: false,
