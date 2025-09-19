@@ -341,6 +341,11 @@ export const createEvent = async (req, res) => {
       }
     }
 
+    const coords = {
+      lat: Number(computedCoords.lat),
+      lng: Number(computedCoords.lng),
+    };
+
     const event = new Event({
       userId: user._id,
       addedby: user.role,
@@ -365,7 +370,11 @@ export const createEvent = async (req, res) => {
       regular_price,
       discount_percent,
       discount_codes: parsedDiscountCodes,
-      event_coordinates: computedCoords, // ← lat/lng + extras
+      event_coordinates: coords, // ← lat/lng + extras
+      geo: {
+        type: "Point",
+        coordinates: [coords.lng, coords.lat], // always [lng, lat]
+      },
     });
 
     const saved = await event.save();

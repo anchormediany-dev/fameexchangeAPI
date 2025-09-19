@@ -50,7 +50,27 @@ const eventSchema = new mongoose.Schema(
 
     event_coordinates: {
       lat: { type: Number },
-      long: { type: Number },
+      lng: { type: Number },
+    },
+    geo: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        index: "2dsphere",
+        validate: {
+          validator: function (v) {
+            return (
+              Array.isArray(v) &&
+              v.length === 2 &&
+              v[0] >= -180 &&
+              v[0] <= 180 &&
+              v[1] >= -90 &&
+              v[1] <= 90
+            );
+          },
+          message: "geo.coordinates must be [lng, lat]",
+        },
+      },
     },
   },
   { timestamps: true }
