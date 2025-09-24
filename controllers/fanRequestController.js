@@ -258,27 +258,27 @@ export const rescheduleFanRequest = async (req, res) => {
         message: "Access denied. Only fans can perform this action.",
       });
     }
-    if (
-      status !== "rescheduled" &&
-      status !== "declined" &&
-      status === "accepted"
-    ) {
-      if (!date || !time) {
-        return res.status(400).json({
-          success: false,
-          message: "New date and time are required for rescheduling",
-        });
-      }
-      const newDateTime = new Date(`${date}T${time}`);
-      const now = new Date();
+    // if (
+    //   status !== "rescheduled" &&
+    //   status !== "declined" &&
+    //   status === "accepted"
+    // ) {
+    //   // if (!date || !time) {
+    //   //   return res.status(400).json({
+    //   //     success: false,
+    //   //     message: "New date and time are required for rescheduling",
+    //   //   });
+    //   // }
+    //   // const newDateTime = new Date(`${date}T${time}`);
+    //   // const now = new Date();
 
-      if (newDateTime < now) {
-        return res.status(400).json({
-          success: false,
-          message: "New date and time must be today or in the future",
-        });
-      }
-    }
+    //   // if (newDateTime < now) {
+    //   //   return res.status(400).json({
+    //   //     success: false,
+    //   //     message: "New date and time must be today or in the future",
+    //   //   });
+    //   // }
+    // }
 
     const request = await FanInverseRequest.findById(id);
 
@@ -302,9 +302,6 @@ export const rescheduleFanRequest = async (req, res) => {
       });
     }
     if (status === "accepted") {
-      request.date = date;
-      request.time = time;
-      if (location) request.location = location;
       request.rescheduledStatus = status;
 
       request.status = status;
@@ -381,6 +378,6 @@ export const rescheduleFanRequest = async (req, res) => {
     });
   } catch (error) {
     console.error("Reschedule Error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, message: "Server error", error });
   }
 };

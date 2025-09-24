@@ -3,43 +3,115 @@ import mongoose from "mongoose";
 import fs from "fs";
 import User from "../models/user.js";
 
+// Utilities
+const getRawFiles = (req) => {
+  // Supports multer single/array/fields
+  const arr = Array.isArray(req.files)
+    ? req.files
+    : req.files
+    ? Object.values(req.files).flat()
+    : [];
+  return Array.isArray(arr) ? arr : [];
+};
+
+const mapAttachment = (f) => ({
+  fileUrl: f.path || f.location || f.url, // local or S3
+  fileType: (f.mimetype || "").split("/")[1] || "",
+  fileName: f.originalname || "",
+  mime: f.mimetype || "",
+  size: typeof f.size === "number" ? f.size : null,
+});
+
+const splitAttachments = (raw) => {
+  const images = [];
+  const others = [];
+  for (const f of raw) {
+    if ((f.mimetype || "").startsWith("image/")) images.push(mapAttachment(f));
+    else others.push(mapAttachment(f));
+  }
+  return { images, others };
+};
+
 //upload documents
 export const uploadUserDocuments = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user?._id;
+    if (!userId)
+      return res.status(401).json({ success: false, error: "Unauthorized" });
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: "No files uploaded" });
-    }
+    const { docId, docType, text = "" } = req.body;
 
-    const newDocs = req.files.map((file) => ({
-      fileUrl: file.path,
-      fileType: file.mimetype.split("/")[1],
-    }));
+    const user = await User.findById(userId);
+    if (!user)
+      return res.status(404).json({ success: false, error: "User not found" });
 
-    // ✅ Additional Check: If newDocs is empty
-    if (newDocs.length === 0) {
-      return res.status(400).json({ message: "No valid documents to upload" });
-    }
+    const rawFiles = getRawFiles(req);
+    const { images, others } = splitAttachments(rawFiles);
+    const role = user?.isAdmin ? "admin" : "user";
 
-    let userDoc = await UserDocument.findOne({ userId });
+    // Append message to existing document thread
+    if (docId) {
+      const doc = await UserDocument.findById(docId);
+      if (!doc)
+        return res
+          .status(404)
+          .json({ success: false, error: "UserDocument not found" });
 
-    if (userDoc) {
-      // Add new docs to existing user's document array
-      userDoc.documents.push(...newDocs);
-      await userDoc.save();
-    } else {
-      // Create new document with uploaded files
-      userDoc = await UserDocument.create({
-        userId,
-        documents: newDocs,
+      // add message
+      doc.messages.push({
+        sender: user._id,
+        role,
+        text,
+        images,
+        files: others,
+        sentAt: new Date(),
       });
+      // keep uploads log as well (optional: only when files exist)
+      if (rawFiles.length) {
+        doc.uploads.push(
+          ...rawFiles
+            .map(mapAttachment)
+            .map((u) => ({ ...u, verification: { status: "PENDING" } }))
+        );
+        doc.status = "PENDING";
+      }
+      // update meta/unreads
+      doc.touchMessageMeta(role);
+
+      await doc.save();
+      return res
+        .status(200)
+        .json({ success: true, mode: "message_appended", data: doc });
     }
 
-    return res.status(200).json({
-      message: "Documents uploaded and saved successfully",
-      userDocument: userDoc,
+    // Create new document thread
+    const uploads = rawFiles
+      .map(mapAttachment)
+      .map((u) => ({ ...u, verification: { status: "PENDING" } }));
+    const doc = await UserDocument.create({
+      userId,
+      docType: docType || "other",
+      uploads,
+      messages:
+        text || rawFiles.length
+          ? [
+              {
+                sender: user._id,
+                role,
+                text,
+                images,
+                files: others,
+                sentAt: new Date(),
+              },
+            ]
+          : [],
+      status: "PENDING",
     });
+    // set initial meta/unreads, then save once
+    doc.touchMessageMeta(role);
+    await doc.save();
+
+    return res.status(201).json({ success: true, mode: "created", data: doc });
   } catch (err) {
     console.error("Upload error:", err);
     res.status(500).json({ message: "Internal server error" });

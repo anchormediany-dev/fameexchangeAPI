@@ -95,5 +95,33 @@ const userDocumentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/** ---------- Helpers to maintain roll-up flags ---------- */
+userDocumentSchema.methods.touchMessageMeta = function (role) {
+  this.lastMessageAt = new Date();
+  this.lastMessageRole = role;
+  if (role === "user") {
+    this.adminUnread = (this.adminUnread || 0) + 1;
+    this.needsAdminAttention = true;
+  }
+  if (role === "admin") {
+    this.userUnread = (this.userUnread || 0) + 1;
+  }
+};
+
+userDocumentSchema.pre("save", function (next) {
+  // auto-derive isVerified if all uploads are verified
+  if (this.uploads?.length) {
+    const allVerified = this.uploads.every(
+      (u) => u.verification?.status === "VERIFIED"
+    );
+    this.isVerified = !!allVerified;
+    if (allVerified && this.status !== "VERIFIED") this.status = "VERIFIED";
+  } else {
+    this.isVerified = false;
+    if (this.status === "VERIFIED") this.status = "PENDING";
+  }
+  next();
+});
+
 const UserDocument = mongoose.model("UserDocument", userDocumentSchema);
 export default UserDocument;
