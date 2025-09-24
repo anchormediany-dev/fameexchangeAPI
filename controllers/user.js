@@ -547,6 +547,132 @@ export const getTalentOverview = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+export const getFanOverview = async (req, res) => {
+  try {
+    const paramId = req.params?.id; // optional: /api/fan/:id/overview
+    const fanId = paramId || req?.user?._id; // self when no :id provided
+
+    if (!fanId || !mongoose.Types.ObjectId.isValid(fanId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or missing fan id" });
+    }
+
+    // If fetching self (no :id), enforce role FAN
+    if (!paramId) {
+      const me = await User.findById(fanId).select("role").lean();
+      if (!me || String(me.role).toUpperCase() !== "FAN") {
+        return res
+          .status(403)
+          .json({ success: false, message: "Access denied (not a FAN)" });
+      }
+    }
+
+    // --- Selects / projections
+    const privateUserProjection = {
+      password: 0,
+      OTP_code: 0,
+      is_login_google: 0,
+      is_login_facebook: 0,
+      google_login_id: 0,
+      facebook_login_id: 0,
+      __v: 0,
+    };
+    const publicUserProjection = "name full_name email role images stage_name";
+
+    // --- Sorting helpers (defaults)
+    const parseSort = (sortBy, order, fallbackField, fallbackDir = -1) => {
+      if (!sortBy) return { [fallbackField]: fallbackDir };
+      const dir = String(order || "").toLowerCase() === "asc" ? 1 : -1;
+      return { [sortBy]: dir };
+    };
+
+    // Query params (optional): ?eventsSortBy=datetime&eventsOrder=asc&reqSortBy=updatedAt&reqOrder=desc
+    const {
+      eventsSortBy,
+      eventsOrder,
+      reqSortBy,
+      reqOrder,
+      eventsLimit,
+      eventsSkip,
+      reqLimit,
+      reqSkip,
+    } = req.query;
+
+    const eventsSort = eventsSortBy
+      ? parseSort(eventsSortBy, eventsOrder, "datetime", 1) // if user specifies, use it
+      : { datetime: 1, createdAt: -1 }; // default: upcoming first, then newest created
+
+    const requestsSort = parseSort(reqSortBy, reqOrder, "updatedAt", -1); // default: latest updates first
+
+    const evLimit = Math.min(Number(eventsLimit) || 50, 200);
+    const evSkip = Math.max(Number(eventsSkip) || 0, 0);
+    const rqLimit = Math.min(Number(reqLimit) || 50, 200);
+    const rqSkip = Math.max(Number(reqSkip) || 0, 0);
+
+    // --- Profile
+    const profileQ = User.findById(fanId).select(privateUserProjection).lean();
+
+    // --- Fan Requests with status "rescheduled"
+    // Adjust the filter fields to your actual FanRequest schema (fanId/requesterId/talentId etc.)
+    const rescheduledRequestsQ = fanInverseRequestModel
+      .find({
+        status: "rescheduled",
+        $or: [
+          { fanId }, // requests made by this fan
+          { requesterId: fanId }, // or if your schema uses requesterId
+        ],
+      })
+      .populate({ path: "fanId", select: publicUserProjection })
+      .populate({ path: "talentId", select: publicUserProjection })
+      .sort(requestsSort)
+      .skip(rqSkip)
+      .limit(rqLimit)
+      .lean();
+
+    // --- Events the fan marked as "interested"
+    // Schema: prefrences: [{ users: ObjectId<User>, prefrence_Type: "interested"|"notinterested"|"attending", event_type }]
+    const eventsQ = eventModel
+      .find({
+        status: "active",
+        prefrences: {
+          $elemMatch: {
+            users: new mongoose.Types.ObjectId(fanId),
+            prefrence_Type: "interested",
+          },
+        },
+      })
+      .populate({ path: "userId", select: publicUserProjection }) // creator
+      .populate({ path: "addedBy", select: publicUserProjection }) // optional
+      .populate({ path: "prefrences.users", select: publicUserProjection }) // attendees
+      .sort(eventsSort)
+      .skip(evSkip)
+      .limit(evLimit)
+      .lean();
+
+    const [profile, rescheduledRequests, events] = await Promise.all([
+      profileQ,
+      rescheduledRequestsQ,
+      eventsQ,
+    ]);
+
+    if (!profile) {
+      return res.status(404).json({ success: false, message: "Fan not found" });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        profile,
+        rescheduledRequests,
+        events, // only "interested" events for this fan
+      },
+    });
+  } catch (err) {
+    console.error("getTalentOverview error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
 
 export const adminDashboard = async (req, res) => {
   try {

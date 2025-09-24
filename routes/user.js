@@ -12,6 +12,7 @@ import {
   getTalentOverview,
   getAllTalentUsers,
   adminDashboard,
+  getFanOverview,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -39,6 +40,7 @@ router.get("/overview", auth_key_header, auth_token, getTalentOverview);
 
 // Admin/ops can fetch by talent id (protect with your admin middleware if needed)
 router.get("/:id/overview", auth_key_header, getTalentOverview);
+router.get("/:id/fan/overview", auth_key_header, getFanOverview);
 
 // Update a specific user
 router.put("/update/:id", auth_key_header, auth_token, updateUserById);
