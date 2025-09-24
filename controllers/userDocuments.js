@@ -122,7 +122,7 @@ export const verifyOrRejectUserDocument = async (req, res) => {
   try {
     const { documentId } = req.params;
     const adminId = req.user._id;
-    console.log(req.user);
+
     const { action, rejectionReason = "" } = req.body;
 
     const document = await UserDocument.findById(documentId);
@@ -149,9 +149,10 @@ export const verifyOrRejectUserDocument = async (req, res) => {
 
     const updateData = {
       status: isApprove ? "VERIFIED" : "REJECTED",
-      isVerified: isApprove,
+
       verifiedBy: adminId,
       verifiedAt: new Date(),
+      isKYCVerified: true,
       rejectionReason: isReject ? rejectionReason : "",
     };
 
@@ -193,6 +194,35 @@ export const getUserDocumentsByUserId = async (req, res) => {
     return res.status(200).json({
       success: true,
       documents: userDoc.documents,
+    });
+  } catch (error) {
+    console.error("Get user documents error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+export const getKycId = async (req, res) => {
+  try {
+    const kycId = req.params.id;
+
+    if (!kycId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
+    }
+
+    const userDoc = await UserDocument.findOne({ _id: kycId });
+
+    if (!userDoc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No documents found for this user" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      documents: userDoc,
     });
   } catch (error) {
     console.error("Get user documents error:", error);

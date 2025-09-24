@@ -78,7 +78,8 @@ const userDocumentSchema = new mongoose.Schema(
       enum: ["PENDING", "VERIFIED", "REJECTED"],
       default: "PENDING",
     },
-    isVerified: { type: Boolean, default: false },
+
+    isKYCVerified: { type: Boolean, default: false },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

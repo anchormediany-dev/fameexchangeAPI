@@ -4,6 +4,7 @@ import auth_admin from "../middleware/auth_admin.js";
 import {
   deleteRejectedUserDocument,
   getAllUserDocuments,
+  getKycId,
   getUserDocumentsByUserId,
   uploadUserDocuments,
   verifyOrRejectUserDocument,
@@ -32,6 +33,7 @@ router.put(
 
 router.get("/", getUserDocumentsByUserId);
 router.get("/all-user-documents", getAllUserDocuments);
+router.get("/kyc/:id", getKycId);
 //if document reject then delete the previous uplaoded documents
 router.delete(
   "/delete/:documentId",

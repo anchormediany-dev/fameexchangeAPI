@@ -580,6 +580,15 @@ export const getFanOverview = async (req, res) => {
     };
     const publicUserProjection = "name full_name email role images stage_name";
 
+    // (object projection for $project)
+    const userProj = {
+      name: 1,
+      full_name: 1,
+      email: 1,
+      role: 1,
+      images: 1,
+      stage_name: 1,
+    };
     // --- Sorting helpers (defaults)
     const parseSort = (sortBy, order, fallbackField, fallbackDir = -1) => {
       if (!sortBy) return { [fallbackField]: fallbackDir };
@@ -603,7 +612,8 @@ export const getFanOverview = async (req, res) => {
       ? parseSort(eventsSortBy, eventsOrder, "datetime", 1) // if user specifies, use it
       : { datetime: 1, createdAt: -1 }; // default: upcoming first, then newest created
 
-    const requestsSort = parseSort(reqSortBy, reqOrder, "updatedAt", -1); // default: latest updates first
+    const reqSortField = reqSortBy || "updatedAt";
+    const reqSortDir = String(reqOrder || "").toLowerCase() === "asc" ? 1 : -1;
 
     const evLimit = Math.min(Number(eventsLimit) || 50, 200);
     const evSkip = Math.max(Number(eventsSkip) || 0, 0);
@@ -613,22 +623,67 @@ export const getFanOverview = async (req, res) => {
     // --- Profile
     const profileQ = User.findById(fanId).select(privateUserProjection).lean();
 
-    // --- Fan Requests with status "rescheduled"
-    // Adjust the filter fields to your actual FanRequest schema (fanId/requesterId/talentId etc.)
+    // --- Requests: rescheduled first, then others (populated), paginated & sorted
+    const { ObjectId } = mongoose.Types;
+    const baseMatch = {
+      $or: [
+        { fanId: new ObjectId(fanId) },
+        { requesterId: new ObjectId(fanId) }, // keep if your schema uses this
+      ],
+    };
+
     const rescheduledRequestsQ = fanInverseRequestModel
-      .find({
-        status: "rescheduled",
-        $or: [
-          { fanId }, // requests made by this fan
-          { requesterId: fanId }, // or if your schema uses requesterId
-        ],
-      })
-      .populate({ path: "fanId", select: publicUserProjection })
-      .populate({ path: "talentId", select: publicUserProjection })
-      .sort(requestsSort)
-      .skip(rqSkip)
-      .limit(rqLimit)
-      .lean();
+      .aggregate([
+        { $match: baseMatch },
+        // Priority flag: rescheduled -> 0 (top), others -> 1
+        {
+          $addFields: {
+            _priority: {
+              $cond: [{ $eq: [{ $toLower: "$status" }, "rescheduled"] }, 0, 1],
+            },
+          },
+        },
+        // Sort by priority first, then your requested sort field, then _id
+        { $sort: { _priority: 1, [reqSortField]: reqSortDir, _id: -1 } },
+        // Pagination
+        { $skip: rqSkip },
+        { $limit: rqLimit },
+        // Populate fanId
+        {
+          $lookup: {
+            from: "users",
+            let: { uid: "$fanId" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$_id", "$$uid"] } } },
+              { $project: userProj },
+            ],
+            as: "_fan",
+          },
+        },
+        // Populate talentId
+        {
+          $lookup: {
+            from: "users",
+            let: { uid: "$talentId" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$_id", "$$uid"] } } },
+              { $project: userProj },
+            ],
+            as: "_talent",
+          },
+        },
+        // Overwrite original refs with populated docs, keep keys the same
+        {
+          $set: {
+            fanId: { $ifNull: [{ $arrayElemAt: ["$_fan", 0] }, "$fanId"] },
+            talentId: {
+              $ifNull: [{ $arrayElemAt: ["$_talent", 0] }, "$talentId"],
+            },
+          },
+        },
+        { $project: { _fan: 0, _talent: 0, _priority: 0 } },
+      ])
+      .exec();
 
     // --- Events the fan marked as "interested"
     // Schema: prefrences: [{ users: ObjectId<User>, prefrence_Type: "interested"|"notinterested"|"attending", event_type }]
