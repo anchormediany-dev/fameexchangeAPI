@@ -42,12 +42,12 @@ export const confirmRequest = async (req, res) => {
     // Normalize status
     const raw = String(status).toLowerCase().trim();
     const normalizedStatus =
-      raw === "accepted" ? "accepted" : raw === "decline" ? "decline" : null;
+      raw === "accepted" ? "accepted" : raw === "declined" ? "declined" : null;
 
     if (!normalizedStatus) {
       return res.status(400).json({
         success: false,
-        error: "Invalid status. Use 'accepted' or 'decline'.",
+        error: "Invalid status. Use 'accepted' or 'declined'.",
       });
     }
 
