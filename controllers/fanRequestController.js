@@ -72,7 +72,7 @@ export const createFanRequest = async (req, res) => {
     // Store notification for fan
     await Notification.create({
       userId: checkUser._id,
-      description: `You have sent a new session request from ${talentName} for ${date} at ${time}.`,
+      description: `You’ve sent a request to ${talentName} for ${date} at ${time}.`,
       category: "session",
       referenceModel: "FanInverseRequest",
       referenceId: newRequest._id,
@@ -80,7 +80,7 @@ export const createFanRequest = async (req, res) => {
     // Store notification for talent
     await Notification.create({
       userId: talentUser._id,
-      description: `You have sent a new session request from ${checkUser.name} for ${date} at ${time}.`,
+      description: `New request from ${checkUser.name} for ${date} at ${time}.`,
       category: "session",
       referenceModel: "FanInverseRequest",
       referenceId: newRequest._id,
@@ -92,7 +92,7 @@ export const createFanRequest = async (req, res) => {
 
     message = `
         <p>Hi ${checkUser.name},</p>
-        <p>Your session has been <strong>sent</strong> to the talent.</p>
+        <p>Your request has been sent to the ${talentName}.</p>
         <p><strong>Date:</strong> ${date}<br>
         <strong>Time:</strong> ${time}<br>
         <strong>Location:</strong> ${location}</p>
@@ -233,7 +233,7 @@ export const deleteFanRequest = async (req, res) => {
 export const rescheduleFanRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, time, location, status, accessType } = req.body;
+    const { date, time, location, status } = req.body;
 
     const fanId = req?.user?._id;
 
@@ -314,18 +314,13 @@ export const rescheduleFanRequest = async (req, res) => {
         talentConfirmation.time = time;
         if (location) talentConfirmation.location = location;
         talentConfirmation.status = status;
-        talentConfirmation.accessType = accessType;
         await talentConfirmation.save();
       }
       await request.save();
       // Store notification for fan
       await Notification.create({
         userId: checkUser._id,
-        description: `Fan ${
-          checkUser.name || "A fan"
-        } rescheduled the session to ${
-          request.talentName
-        } for ${date} at ${time}.`,
+        description: `${request.talentName} rescheduled the request for ${date} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -333,9 +328,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for talent
       await Notification.create({
         userId: talentUser._id,
-        description: `Fan ${
-          checkUser.name || "A fan"
-        } rescheduled the session to ${checkUser.name} for ${date} at ${time}.`,
+        description: `${checkUser.name} accepted the request for ${date} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -348,7 +341,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for fan
       await Notification.create({
         userId: checkUser._id,
-        description: `You declined the session status for ${request.talentName} to ${status} on ${date} at ${time}.`,
+        description: `You have declined ${request.talentName}'s request scheduled on ${date} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -356,7 +349,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for talent
       await Notification.create({
         userId: talentUser._id,
-        description: `The session for ${request.talentName} was  ${status} by ${checkUser.name} on ${date} at ${time}.`,
+        description: `The request for ${request.talentName} was ${status} by ${checkUser.name} on ${date} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,

@@ -132,14 +132,14 @@ export const confirmRequest = async (req, res) => {
       await Notification.create([
         {
           userId: fanUserData._id,
-          description: `Your session was confirmed by ${talentUser.name} for ${confirmedDate} at ${time}.`,
+          description: `Your Request was confirmed by ${talentUser.name} for ${confirmedDate} at ${time}.`,
           category: "session",
           referenceModel: "TalentConfirmation",
           referenceId: confirmation._id,
         },
         {
           userId: talentId,
-          description: `You confirmed a session with ${fanUserData.name}.`,
+          description: `You confirmed a Request with ${fanUserData.name} for ${confirmedDate} at ${time}.`,
           category: "session",
           referenceModel: "TalentConfirmation",
           referenceId: confirmation._id,
@@ -152,7 +152,7 @@ export const confirmRequest = async (req, res) => {
         "Session Confirmed",
         `
           <p>Hi ${fanUserData.name},</p>
-          <p>Your session with ${talentUser.name} has been <strong>confirmed</strong>.</p>
+          <p>Your request with ${talentUser.name} has been <strong>confirmed</strong>.</p>
           <p><strong>Date:</strong> ${confirmedDate}<br><strong>Time:</strong> ${time}<br><strong>Location:</strong> ${location}</p>
         `
       );
@@ -164,9 +164,9 @@ export const confirmRequest = async (req, res) => {
       await Notification.create([
         {
           userId: fanUserData._id,
-          description: `Your session request was declined by ${
-            talentUser.name
-          }.${declineMsg ? declineMsg : ""}`,
+          description: `Your request was declined by ${talentUser.name}.${
+            declineMsg ? declineMsg : ""
+          }`,
           category: "session",
           referenceModel: "TalentConfirmation",
           referenceId: confirmation._id,
@@ -186,7 +186,7 @@ export const confirmRequest = async (req, res) => {
         "Session Declined",
         `
           <p>Hi ${fanUserData.name},</p>
-          <p>Your session request with ${
+          <p>Your request with ${
             talentUser.name
           } has been <strong>declined</strong>.</p>
           ${
@@ -388,7 +388,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
     // Store notification for fan
     await Notification.create({
       userId: fanUser._id,
-      description: `Talent <strong>${talentUser.name}</strong> rescheduled your session to ${confirmedDate} at ${time}.`,
+      description: `${talentUser.name} has rescheduled your request to ${confirmedDate} on ${time}.`,
       category: "session",
       referenceModel: "TalentConfirmation",
       referenceId: confirmation._id,
@@ -397,7 +397,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
     // Store notification for talent
     await Notification.create({
       userId: talentUser._id,
-      description: `You rescheduled the session with <strong>${fanUser.name}</strong> to ${confirmedDate} at ${time}.`,
+      description: `You rescheduled the request with ${fanUser.name} for ${confirmedDate} at ${time}.`,
       category: "session",
       referenceModel: "TalentConfirmation",
       referenceId: confirmation._id,
@@ -407,7 +407,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
     const subject = "Talent Rescheduled Your Session";
     const message = `
       <p>Hi ${fanUser.name},</p>
-      <p>Your session has been <strong>rescheduled</strong> by ${talentUser.name}.</p>
+      <p>Your request has been <strong>rescheduled</strong> by ${talentUser.name}.</p>
       <p><strong>Date:</strong> ${confirmedDate}<br>
       <strong>Time:</strong> ${time}<br>
       <strong>Location:</strong> ${location}</p>
