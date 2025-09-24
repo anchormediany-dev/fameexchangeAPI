@@ -14,6 +14,7 @@ export const confirmRequest = async (req, res) => {
       fanName,
       status,
       declineReason,
+      accessType,
     } = req.body;
     const talentId = req.user._id;
 
@@ -109,6 +110,7 @@ export const confirmRequest = async (req, res) => {
       fanId: fanUserData._id,
       requestId: fanRequest._id,
       fanName: fanUserByName.name,
+      accessType: accessType,
       status: normalizedStatus, // 'accepted' | 'declined'
       confirmedDate:
         normalizedStatus === "accepted" ? confirmedDate : undefined,
@@ -169,13 +171,13 @@ export const confirmRequest = async (req, res) => {
           referenceModel: "TalentConfirmation",
           referenceId: confirmation._id,
         },
-        {
-          userId: talentId,
-          description: `You declined the session request from ${fanUserData.name}.`,
-          category: "session",
-          referenceModel: "TalentConfirmation",
-          referenceId: confirmation._id,
-        },
+        // {
+        //   userId: talentId,
+        //   description: `You declined the session request from ${fanUserData.name}.`,
+        //   category: "session",
+        //   referenceModel: "TalentConfirmation",
+        //   referenceId: confirmation._id,
+        // },
       ]);
 
       // Email
@@ -285,7 +287,7 @@ export const deleteConfirmation = async (req, res) => {
 export const rescheduleTalentConfirmation = async (req, res) => {
   try {
     const { id: requestId } = req.params;
-    const { confirmedDate, time, location } = req.body;
+    const { confirmedDate, time, location, accessType } = req.body;
 
     const talentId = req?.user?._id;
 
@@ -329,7 +331,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
     // console.log("fanRequest", fanRequest);
 
     const fan = await User.findOne(fanRequest.fanId);
-    console.log("fan test", fan);
+
     // console.log(fanRequest.talentId, talentId);
     // Ensure this request is for the logged-in talent
     if (fanRequest.talentId?.toString() !== talentId.toString()) {
@@ -354,6 +356,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
         requestId: fanRequest._id,
         fanId: fanRequest.fanId,
         talentId,
+        accessType,
         confirmedDate,
         time,
         location,
@@ -361,19 +364,26 @@ export const rescheduleTalentConfirmation = async (req, res) => {
         confirmedAt: newDateTime,
         fanName: fan.name,
       });
+      fanRequest.status = "rescheduled";
+      fanRequest.rescheduledStatus = "rescheduled-by-talent";
+      fanRequest.rescheduled = true;
+      fanRequest.telentConfirmationId = confirmation._id;
+      await fanRequest.save();
     } else {
       confirmation.confirmedDate = confirmedDate;
       confirmation.time = time;
-      fanName: fan.name;
+
       confirmation.location = location;
       confirmation.status = "rescheduled";
       confirmation.confirmedAt = newDateTime;
       await confirmation.save();
-    }
 
-    fanRequest.status = "accepted";
-    fanRequest.rescheduledStatus = "rescheduled-by-talent";
-    await fanRequest.save();
+      fanRequest.status = "rescheduled";
+      fanRequest.rescheduledStatus = "rescheduled-by-talent";
+      fanRequest.rescheduled = true;
+      fanRequest.telentConfirmationId = confirmation._id;
+      await fanRequest.save();
+    }
 
     // Store notification for fan
     await Notification.create({

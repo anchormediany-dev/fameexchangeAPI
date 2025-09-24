@@ -1,5 +1,6 @@
 import FanInverseRequest from "../models/fanInverseRequestModel.js";
 import Notification from "../models/notificationModel.js";
+import TalentConfirmation from "../models/talentConfirmationModel.js";
 import User from "../models/user.js";
 import { sendMail } from "../utils/mailer.js";
 
@@ -232,7 +233,7 @@ export const deleteFanRequest = async (req, res) => {
 export const rescheduleFanRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { date, time, location } = req.body;
+    const { date, time, location, status, accessType } = req.body;
 
     const fanId = req?.user?._id;
 
@@ -257,25 +258,33 @@ export const rescheduleFanRequest = async (req, res) => {
         message: "Access denied. Only fans can perform this action.",
       });
     }
+    if (
+      status !== "rescheduled" &&
+      status !== "declined" &&
+      status === "accepted"
+    ) {
+      if (!date || !time) {
+        return res.status(400).json({
+          success: false,
+          message: "New date and time are required for rescheduling",
+        });
+      }
+      const newDateTime = new Date(`${date}T${time}`);
+      const now = new Date();
 
-    if (!date || !time) {
-      return res.status(400).json({
-        success: false,
-        message: "New date and time are required for rescheduling",
-      });
-    }
-
-    const newDateTime = new Date(`${date}T${time}`);
-    const now = new Date();
-
-    if (newDateTime < now) {
-      return res.status(400).json({
-        success: false,
-        message: "New date and time must be today or in the future",
-      });
+      if (newDateTime < now) {
+        return res.status(400).json({
+          success: false,
+          message: "New date and time must be today or in the future",
+        });
+      }
     }
 
     const request = await FanInverseRequest.findById(id);
+
+    const talentConfirmation = await TalentConfirmation.findOne({
+      requestId: request.telentConfirmationId,
+    });
 
     const talentUser = await User.findOne({ _id: request?.talentId });
     // console.log("talentUser", talentUser);
@@ -292,33 +301,67 @@ export const rescheduleFanRequest = async (req, res) => {
         message: "Cannot rescheduled the already accepted request",
       });
     }
-    request.date = date;
-    request.time = time;
-    if (location) request.location = location;
-    request.rescheduledStatus = "rescheduled";
+    if (status === "accepted") {
+      request.date = date;
+      request.time = time;
+      if (location) request.location = location;
+      request.rescheduledStatus = status;
 
-    // Store notification for fan
-    await Notification.create({
-      userId: checkUser._id,
-      description: `Fan ${
-        checkUser.name || "A fan"
-      } rescheduled the session to ${
-        request.talentName
-      } for ${date} at ${time}.`,
-      category: "session",
-      referenceModel: "FanInverseRequest",
-      referenceId: request._id,
-    });
-    // Store notification for talent
-    await Notification.create({
-      userId: talentUser._id,
-      description: `Fan ${
-        checkUser.name || "A fan"
-      } rescheduled the session to ${checkUser.name} for ${date} at ${time}.`,
-      category: "session",
-      referenceModel: "FanInverseRequest",
-      referenceId: request._id,
-    });
+      request.status = status;
+
+      if (talentConfirmation) {
+        talentConfirmation.confirmedDate = date;
+        talentConfirmation.time = time;
+        if (location) talentConfirmation.location = location;
+        talentConfirmation.status = status;
+        talentConfirmation.accessType = accessType;
+        await talentConfirmation.save();
+      }
+      await request.save();
+      // Store notification for fan
+      await Notification.create({
+        userId: checkUser._id,
+        description: `Fan ${
+          checkUser.name || "A fan"
+        } rescheduled the session to ${
+          request.talentName
+        } for ${date} at ${time}.`,
+        category: "session",
+        referenceModel: "FanInverseRequest",
+        referenceId: request._id,
+      });
+      // Store notification for talent
+      await Notification.create({
+        userId: talentUser._id,
+        description: `Fan ${
+          checkUser.name || "A fan"
+        } rescheduled the session to ${checkUser.name} for ${date} at ${time}.`,
+        category: "session",
+        referenceModel: "FanInverseRequest",
+        referenceId: request._id,
+      });
+    } else {
+      request.rescheduledStatus = status;
+
+      request.status = status;
+
+      // Store notification for fan
+      await Notification.create({
+        userId: checkUser._id,
+        description: `You declined the session status for ${request.talentName} to ${status} on ${date} at ${time}.`,
+        category: "session",
+        referenceModel: "FanInverseRequest",
+        referenceId: request._id,
+      });
+      // Store notification for talent
+      await Notification.create({
+        userId: talentUser._id,
+        description: `The session for ${request.talentName} was  ${status} by ${checkUser.name} on ${date} at ${time}.`,
+        category: "session",
+        referenceModel: "FanInverseRequest",
+        referenceId: request._id,
+      });
+    }
 
     // Compose message based on status
     let subject = "Rescheduled Talent Session ";

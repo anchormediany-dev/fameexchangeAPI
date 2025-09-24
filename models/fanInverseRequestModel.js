@@ -25,14 +25,22 @@ const fanInverseRequestSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    rescheduled: {
+      type: Boolean,
+      default: false,
+    },
     ispaid: {
       type: Boolean,
       default: false,
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "decline"],
+      enum: ["pending", "accepted", "declined", "rescheduled"],
       default: "pending",
+    },
+    telentConfirmationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TalentConfirmation",
     },
   },
   { timestamps: true }
