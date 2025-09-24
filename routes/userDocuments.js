@@ -18,7 +18,8 @@ router.post(
   "/upload-docs",
   auth_key_header,
   auth_token,
-  upload.array("images", 10),
+  // upload.array("images", 10),
+  upload.any(),
   uploadUserDocuments
 );
 // Admin verifies or rejects the document

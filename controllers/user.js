@@ -650,7 +650,7 @@ export const getFanOverview = async (req, res) => {
       .limit(evLimit)
       .lean();
 
-    const [profile, rescheduledRequests, events] = await Promise.all([
+    const [profile, rescheduledRequests, interestedEvents] = await Promise.all([
       profileQ,
       rescheduledRequestsQ,
       eventsQ,
@@ -665,7 +665,7 @@ export const getFanOverview = async (req, res) => {
       data: {
         profile,
         rescheduledRequests,
-        events, // only "interested" events for this fan
+        interestedEvents, // only "interested" events for this fan
       },
     });
   } catch (err) {

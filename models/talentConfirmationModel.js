@@ -19,7 +19,7 @@ const talentConfirmationSchema = new mongoose.Schema(
     accessType: { type: String },
     status: {
       type: String,
-      enum: ["accepted", "decline", "rescheduled"],
+      enum: ["accepted", "declined", "rescheduled"],
       required: true,
     },
   },
