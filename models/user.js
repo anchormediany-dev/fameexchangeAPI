@@ -93,6 +93,7 @@ const userSchema = new mongoose.Schema(
     agreed_terms: { type: Boolean, default: false },
 
     isDeleted: { type: Boolean, default: false },
+    otpCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

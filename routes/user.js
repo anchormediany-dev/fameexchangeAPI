@@ -39,7 +39,7 @@ router.get("/get/:id", auth_key_header, getUserById);
 router.get("/overview", auth_key_header, auth_token, getTalentOverview);
 
 // Admin/ops can fetch by talent id (protect with your admin middleware if needed)
-router.get("/:id/overview", auth_key_header, getTalentOverview);
+router.get("/:id/overview", auth_key_header, auth_token, getTalentOverview);
 router.get("/:id/fan/overview", auth_key_header, getFanOverview);
 
 // Update a specific user

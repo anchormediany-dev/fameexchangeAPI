@@ -39,7 +39,7 @@ const sessionSchema = new mongoose.Schema(
     },
     isActive: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

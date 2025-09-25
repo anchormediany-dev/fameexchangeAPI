@@ -130,6 +130,8 @@ const login = async (req, res) => {
       res.status(200).json({
         message: "Login Successful",
         token: await userExist.generateToken(),
+        userId: userExist?._id,
+        name: userExist?.name,
       });
     } else {
       res.status(401).json({ message: "Invalid email or password" });
@@ -198,6 +200,12 @@ const resendOTP = async (req, res) => {
 
     // Store OTP in user record
     user.OTP_code = otp;
+    user.otpCount = (user.otpCount || 0) + 1; // Increment OTP count
+    if (user.otpCount > 5) {
+      return res.status(429).json({
+        message: "OTP request limit exceeded. Please try again later.",
+      });
+    }
     await user.save();
 
     const emailSent = await sendEmail(user.email, "otp", otp.toString()); // assuming sendEmail(user, code)

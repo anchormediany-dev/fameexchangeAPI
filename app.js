@@ -20,6 +20,7 @@ import connectToDatabase from "./config/db.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
+import reminderRoutes from "./routes/remindersRoutes.js";
 import newsletterRoutes from "./routes/newsletterRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
 import faqRoutes from "./routes/faqRoutes.js";
@@ -55,6 +56,8 @@ app.use("/api/talent-confirmation", talentConfirmationRoutes);
 app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/team", teamRoutes);
 app.use("/api/faqs", faqRoutes);
+//remainders
+app.use("/api/reminders", reminderRoutes);
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {

@@ -4,6 +4,19 @@ import TalentConfirmation from "../models/talentConfirmationModel.js";
 import User from "../models/user.js";
 import { sendMail } from "../utils/mailer.js";
 
+// Formats a value to US date (MM/DD/YYYY)
+const formatDateUS = (value, tz = "UTC") => {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+};
+
 export const createFanRequest = async (req, res) => {
   try {
     const { talentName, date, time, location, paymentMethod } = req.body;
@@ -301,6 +314,8 @@ export const rescheduleFanRequest = async (req, res) => {
         message: "Cannot rescheduled the already accepted request",
       });
     }
+
+    const dateOnlyFromString = formatDateUS(request?.date, "UTC");
     if (status === "accepted") {
       request.rescheduledStatus = status;
 
@@ -314,10 +329,11 @@ export const rescheduleFanRequest = async (req, res) => {
         await talentConfirmation.save();
       }
       await request.save();
+
       // Store notification for fan
       await Notification.create({
         userId: checkUser._id,
-        description: `${request.talentName} rescheduled the request for ${date} at ${time}.`,
+        description: `${request.talentName} rescheduled the request for ${dateOnlyFromString} at ${request.time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -325,7 +341,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for talent
       await Notification.create({
         userId: talentUser._id,
-        description: `${checkUser.name} accepted the request for ${date} at ${time}.`,
+        description: `${checkUser.name} accepted the request for ${dateOnlyFromString} at ${request.time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -338,7 +354,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for fan
       await Notification.create({
         userId: checkUser._id,
-        description: `You have declined ${request.talentName}'s request scheduled on ${date} at ${time}.`,
+        description: `You have declined ${request.talentName}'s request scheduled on ${dateOnlyFromString} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -346,7 +362,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for talent
       await Notification.create({
         userId: talentUser._id,
-        description: `The request for ${request.talentName} was ${status} by ${checkUser.name} on ${date} at ${time}.`,
+        description: `The request for ${request.talentName} was ${status} by ${checkUser.name} on ${dateOnlyFromString} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,
@@ -360,7 +376,7 @@ export const rescheduleFanRequest = async (req, res) => {
     message = `
         <p>Hi ${checkUser.name},</p>
         <p>You have <strong>Rescheduled </strong> the session.</p>
-        <p><strong>Date:</strong> ${date}<br>
+        <p><strong>Date:</strong> ${dateOnlyFromString}<br>
         <strong>Time:</strong> ${time}<br>
         <strong>Location:</strong> ${location}</p>
         <p>Thanks,<br/>Fame Exchange Team</p>
