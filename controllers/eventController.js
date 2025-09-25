@@ -212,6 +212,10 @@ export const createEvent = async (req, res) => {
       event_coordinates,
       is_featured,
       prefrence,
+      price,
+      is_free,
+      totalSoldTickets,
+      no_of_persons,
     } = req.body;
 
     const missingFields = [];
@@ -375,6 +379,10 @@ export const createEvent = async (req, res) => {
         type: "Point",
         coordinates: [coords.lng, coords.lat], // always [lng, lat]
       },
+      price,
+      is_free,
+      totalSoldTickets,
+      no_of_persons,
     });
 
     const saved = await event.save();
@@ -466,7 +474,7 @@ export const getEventById = async (req, res) => {
         "name KYC_Verified images biography representation token_brand_name talent selected_reps is_rep_have is_active role image email name"
         // "-password -__v -updatedAt -createdAt -isDeleted -is_over_18 -agreed_terms -is_verified -OTP_code -is_login_facebook -is_login_google -isAdmin -password"
       )
-      .populate("talent", "email name role")
+      .populate("talent", "name role images")
       .lean();
     if (!event)
       return res.status(404).json({ success: false, error: "Event not found" });

@@ -24,6 +24,7 @@ import reminderRoutes from "./routes/remindersRoutes.js";
 import newsletterRoutes from "./routes/newsletterRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
 import faqRoutes from "./routes/faqRoutes.js";
+import billingRoutes from "./routes/billingRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -37,6 +38,16 @@ connectToDatabase();
 createInitialKeyIfNotExists()
   .then(() => console.log("Initial key check completed"))
   .catch((err) => console.error("Error initializing key:", err));
+
+app.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    // keep raw body for signature verification
+    next();
+  }
+);
+
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
@@ -58,6 +69,8 @@ app.use("/api/team", teamRoutes);
 app.use("/api/faqs", faqRoutes);
 //remainders
 app.use("/api/reminders", reminderRoutes);
+//stripe billing routes
+app.use("/api/billing", billingRoutes);
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {

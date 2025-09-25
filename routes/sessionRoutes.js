@@ -17,6 +17,7 @@ const router = express.Router();
 router.post("/", auth_token, createSession);
 router.get("/", auth_token, getAllSessions);
 router.get("/user", auth_token, getSessionsByUserId);
+router.get("/user/:id", auth_token, getSessionsByUserId);
 // GET /api/sessions/upcoming
 router.get("/upcoming/:talentId", auth_token, getUpcomingSessions);
 router.get("/:id", auth_token, getSessionById);

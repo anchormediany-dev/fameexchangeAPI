@@ -1,8 +1,8 @@
 import User from "../models/user.js";
-
+import { OAuth2Client } from "google-auth-library";
 import sendEmail from "../utils/helper.js";
 import { signupSchema } from "../validators/user.js";
-
+import jwt from "jsonwebtoken";
 const signup = async (req, res) => {
   try {
     // ✅ Validate Request
@@ -300,4 +300,58 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-export { signup, login, signupAdmin, verifyOTP, resendOTP };
+// login with google
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const googleLogin = async (req, res) => {
+  const { idToken } = req.body;
+
+  if (!idToken) {
+    return res.status(400).json({ message: "idToken is required" });
+  }
+
+  try {
+    // Verify Google idToken
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub, email, name, picture } = payload;
+
+    // Find or create user
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
+        googleId: sub,
+        email,
+        name,
+        avatar: picture,
+        is_verified: true,
+        is_google: true,
+      });
+    }
+
+    // Generate JWT for your application
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET_KEY, {
+      expiresIn: "7d",
+    });
+    const userPayload = {
+      id: user?._id,
+      name: user?.name,
+      email: user?.email,
+    };
+
+    res.status(200).json({
+      message: "Login successful",
+      token,
+      userPayload,
+    });
+  } catch (err) {
+    console.error("Google login error:", err);
+    res.status(401).json({ message: "Invalid or expired Google ID token" });
+  }
+};
+
+export { signup, login, signupAdmin, verifyOTP, resendOTP, googleLogin };

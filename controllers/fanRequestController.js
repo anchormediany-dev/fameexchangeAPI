@@ -19,7 +19,8 @@ const formatDateUS = (value, tz = "UTC") => {
 
 export const createFanRequest = async (req, res) => {
   try {
-    const { talentName, date, time, location, paymentMethod } = req.body;
+    const { talentName, date, time, location, paymentMethod, sessionId } =
+      req.body;
     const fanId = req.user._id;
 
     const checkUser = await User.findOne({ _id: fanId });
@@ -43,11 +44,18 @@ export const createFanRequest = async (req, res) => {
       });
     }
 
-    if (!talentName || !date || !time || !location || !paymentMethod) {
+    if (
+      !talentName ||
+      !date ||
+      !time ||
+      !location ||
+      !paymentMethod ||
+      !sessionId
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields: talentName,location, date, time, paymentMethod",
+          "Missing required fields: talentName,location, date, time, paymentMethod ,sessionId",
       });
     }
 
@@ -137,6 +145,7 @@ export const getAllRequests = async (req, res) => {
         "fanId",
         "name email location paymentMethod status createdAt updatedAt time date"
       )
+      .populate("sessionId")
       .populate("talentId", "name email");
     if (!requests) {
       return res
@@ -156,6 +165,7 @@ export const getOverAllRequests = async (req, res) => {
       $or: [{ talentId: userId }],
     })
       .populate("fanId")
+      .populate("sessionId")
       .populate("talentId");
     if (!requests) {
       return res
@@ -180,6 +190,7 @@ export const getRequestById = async (req, res) => {
   try {
     const request = await FanInverseRequest.findById(req.params.id)
       .populate("fanId")
+      .populate("sessionId")
       .populate("talentId");
     if (!request) {
       return res

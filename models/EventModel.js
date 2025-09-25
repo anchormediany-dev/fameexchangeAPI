@@ -72,6 +72,13 @@ const eventSchema = new mongoose.Schema(
         },
       },
     },
+    price: { type: Number },
+    no_of_tickets: {
+      type: Number,
+    },
+    no_of_persons: { type: Number },
+    totalSoldTickets: { type: Number, default: 0 },
+    is_free: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

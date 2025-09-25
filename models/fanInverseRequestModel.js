@@ -42,6 +42,10 @@ const fanInverseRequestSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "TalentConfirmation",
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Session",
+    },
   },
   { timestamps: true }
 );

@@ -49,7 +49,7 @@ export const getAllSessions = async (req, res) => {
 
 export const getSessionsByUserId = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user._id || req.params.id;
 
     const userData = await User.findById({ _id: userId });
     console.log("userData", userData);

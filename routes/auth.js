@@ -13,6 +13,7 @@ import {
   forgotPassword,
   resetPassword,
   signupAdmin,
+  googleLogin,
 } from "../controllers/auth.js";
 
 // Signup User
@@ -21,7 +22,8 @@ router.post("/admin-signup", auth_key_header, signupAdmin);
 
 // Login User
 router.post("/signin", auth_key_header, login);
-
+//login in with google
+router.post("/google-login", auth_key_header, googleLogin);
 // RE Send OTP
 router.post("/resend-otp", auth_key_header, resendOTP);
 
