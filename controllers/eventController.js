@@ -215,7 +215,6 @@ export const createEvent = async (req, res) => {
       price,
       is_free,
       totalSoldTickets,
-      no_of_persons,
     } = req.body;
 
     const missingFields = [];
@@ -382,7 +381,6 @@ export const createEvent = async (req, res) => {
       price,
       is_free,
       totalSoldTickets,
-      no_of_persons,
     });
 
     const saved = await event.save();

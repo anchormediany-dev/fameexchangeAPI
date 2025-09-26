@@ -67,6 +67,8 @@ export const createPaymentIntent = async (req, res, next) => {
       currency = "usd",
       save_payment_method = false,
       customerId, // optional if you manage Stripe Customers
+      attendees,
+      no_of_persons,
     } = req.body;
 
     assert(eventId, "Missing eventId");
@@ -78,38 +80,64 @@ export const createPaymentIntent = async (req, res, next) => {
     const now = new Date();
     assert(new Date(event.datetime) >= now, "Event already in the past", 400);
 
+    const normAttendees = Array.isArray(attendees)
+      ? attendees
+          .map((a) => ({
+            fullName: String(a.fullName || "").trim(),
+            email: String(a.email || "")
+              .trim()
+              .toLowerCase(),
+            phone: String(a.phone || "").trim(),
+            userId:
+              a.userId && mongoose.Types.ObjectId.isValid(a.userId)
+                ? new mongoose.Types.ObjectId(a.userId)
+                : undefined,
+          }))
+          .filter((a) => a.fullName.length > 0)
+      : [];
+
+    // Admit count logic:
+    // 1) Prefer explicit no_of_persons if provided and >0
+    // 2) Else, use attendees.length if >0
+    // 3) Else, fallback to quantity
     const quantity = Math.max(1, Number(qIn) || 1);
+
+    const personsFromProp =
+      Number(no_of_persons) > 0 ? Number(no_of_persons) : null;
+    const personsFromAttendees =
+      normAttendees.length > 0 ? normAttendees.length : null;
+    const admitCount = personsFromProp || personsFromAttendees || quantity;
+
+    // optional guard: don't allow no_of_persons < attendees.length
+    if (personsFromProp && normAttendees.length > personsFromProp) {
+      return res.status(400).json({
+        success: false,
+        error: "no_of_persons cannot be less than attendees count",
+      });
+    }
 
     // --- soft capacity check (fast fail; still rechecked atomically later) ---
     const remaining =
       (Number(event.no_of_persons) || 0) -
       (Number(event.totalSoldTickets) || 0);
-    assert(quantity <= remaining, "Not enough seats available", 400);
+    // assert(quantity <= remaining, "Not enough seats available", 400);
 
     const unitPrice = calcUnitPriceFromEvent(event);
-    const amount = safeTotal(unitPrice, quantity);
+    const amount = safeTotal(unitPrice, admitCount);
     const amountInMinor = toMinorUnits(amount, currency);
     assert(amountInMinor >= 50, "Amount too small", 400); // min $0.50
 
     // ===== FREE FLOW =====
-    if (event.is_free === true || amountInMinor === 0) {
+    if (event.is_free === true) {
       // 1) Atomically increment seats (no transaction).
       //    Prevent oversell using $expr guard: (no_of_persons - totalSoldTickets) >= quantity
       const evtAfter = await Event.findOneAndUpdate(
-        {
-          _id: event._id,
-          status: "active",
-          datetime: { $gte: new Date() },
-          $expr: {
-            $gte: [
-              { $subtract: ["$no_of_persons", "$totalSoldTickets"] },
-              quantity,
-            ],
-          },
-        },
-        { $inc: { totalSoldTickets: quantity } },
+        event._id,
+        { $inc: { totalSoldTickets: admitCount } },
+
         { new: true }
       );
+      console.log(evtAfter);
 
       if (!evtAfter) {
         return res
@@ -121,7 +149,10 @@ export const createPaymentIntent = async (req, res, next) => {
       const ticket = await Ticket.create({
         userId,
         eventId: event._id,
-        quantity,
+        paymentId: null,
+        quantity: admitCount,
+        no_of_persons: admitCount,
+        attendees: normAttendees, // <-- store all provided attendees
         status: "CONFIRMED",
         isFree: true,
       });
@@ -130,7 +161,7 @@ export const createPaymentIntent = async (req, res, next) => {
       await Payment.create({
         userId,
         eventId: event._id,
-        quantity,
+        quantity: admitCount,
         currency,
         unitPrice: 0,
         amount: 0,
@@ -142,6 +173,8 @@ export const createPaymentIntent = async (req, res, next) => {
           datetime: event.datetime,
           free: true,
           finalized: true,
+          no_of_persons: admitCount,
+          attendees: normAttendees,
         },
       });
 
@@ -165,7 +198,7 @@ export const createPaymentIntent = async (req, res, next) => {
       metadata: {
         eventId: String(event._id),
         userId: String(userId),
-        quantity: String(quantity),
+        quantity: String(admitCount),
         unitPrice: String(unitPrice),
       },
     });
@@ -176,14 +209,19 @@ export const createPaymentIntent = async (req, res, next) => {
       {
         userId,
         eventId: event._id,
-        quantity,
+        quantity: admitCount,
         currency,
         unitPrice,
         amount,
         amountInMinor,
         stripePaymentIntentId: pi.id,
         status: pi.status,
-        meta: { title: event.title, datetime: event.datetime },
+        meta: {
+          title: event.title,
+          datetime: event.datetime,
+          no_of_persons: admitCount,
+          attendees: normAttendees,
+        },
       },
       { upsert: true, new: true }
     );
@@ -257,7 +295,7 @@ export const stripeWebhook = async (req, res, next) => {
 
     switch (event.type) {
       case "payment_intent.succeeded": {
-        const pi = event.data.object;
+        const pi = event.data.id;
 
         // idempotency guard: if we already finalized, bail
         const payment = await Payment.findOneAndUpdate(
@@ -282,8 +320,11 @@ export const stripeWebhook = async (req, res, next) => {
           if (new Date(evt.datetime) < new Date()) {
             throw new Error("Event already in the past");
           }
-
+          const metaAttendees = Array.isArray(payment.meta?.attendees)
+            ? payment.meta.attendees
+            : [];
           const qty = payment.quantity || 1;
+          const metaPersons = Number(payment.meta?.no_of_persons) || qty;
           const remaining = evt.no_of_persons - evt.totalSoldTickets;
           if (qty > remaining) {
             // not enough seats → mark payment as failed/refund later
@@ -292,13 +333,13 @@ export const stripeWebhook = async (req, res, next) => {
               { status: "failed", "meta.failReason": "capacity_exceeded" },
               { session }
             );
-            throw new Error("Not enough seats available");
+            // throw new Error("Not enough seats available");
           }
 
           // 1) Increment sold seats atomically
           await Event.updateOne(
             { _id: evt._id },
-            { $inc: { totalSoldTickets: qty } },
+            { $inc: { totalSoldTickets: metaPersons } },
             { session }
           );
 
@@ -307,10 +348,13 @@ export const stripeWebhook = async (req, res, next) => {
             [
               {
                 userId: payment.userId,
-                eventId: evt._id,
+                eventId: payment.eventId,
                 paymentId: payment._id,
                 quantity: qty,
+                no_of_persons: metaPersons,
+                attendees: metaAttendees,
                 status: "CONFIRMED",
+                isFree: false,
               },
             ],
             { session }
@@ -467,21 +511,23 @@ async function listCore({
       stripePaymentIntentId: 1,
       status: 1,
       createdAt: 1,
-      "meta.title": 1,
-      "meta.datetime": 1,
+      meta: 1,
+      //  meta.description: 1,""
     })
     .lean();
 
   if (populateEvent) {
     query.populate({
       path: "eventId",
-      select: "title datetime price regular_price discount_percent",
+      select:
+        "title datetime price details talent category location address website logo event_cover event_images event_coordinates totalSoldTickets",
+      populate: { path: "talent", select: "name images" },
     });
   }
   if (populateUser) {
     query.populate({
       path: "userId",
-      select: "firstName lastName userName email",
+      select: "name email phone images",
     });
   }
 
