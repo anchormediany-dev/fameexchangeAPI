@@ -1,8 +1,10 @@
 import FanInverseRequest from "../models/fanInverseRequestModel.js";
 import Notification from "../models/notificationModel.js";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
+import { createSessionPayment } from "../controllers/billingController.js";
 import User from "../models/user.js";
 import { sendMail } from "../utils/mailer.js";
+import Session from "../models/sessionModel.js";
 
 // Formats a value to US date (MM/DD/YYYY)
 const formatDateUS = (value, tz = "UTC") => {
@@ -19,15 +21,31 @@ const formatDateUS = (value, tz = "UTC") => {
 
 export const createFanRequest = async (req, res) => {
   try {
-    const { talentName, date, time, location, paymentMethod, sessionId } =
-      req.body;
+    const {
+      talentName,
+      date,
+      time,
+      location,
+      paymentMethod,
+      sessionId,
+      quantity = 1,
+    } = req.body;
     const fanId = req.user._id;
 
     const checkUser = await User.findOne({ _id: fanId });
+    const session = await Session.findById(sessionId);
+    const talentUser = await User.findOne({ name: talentName });
+
     if (!checkUser) {
       return res.status(400).json({
         success: false,
         message: "Fan not found",
+      });
+    }
+    if (!session) {
+      return res.status(400).json({
+        success: false,
+        message: "Session not found",
       });
     }
 
@@ -59,7 +77,6 @@ export const createFanRequest = async (req, res) => {
       });
     }
 
-    const talentUser = await User.findOne({ name: talentName });
     if (talentUser?.name !== talentName) {
       return res
         .status(400)
@@ -88,8 +105,24 @@ export const createFanRequest = async (req, res) => {
       talentId: talentUser && talentUser?._id,
     };
 
+    // Create the Stripe PaymentIntent + Payment row via service
+
     const newRequest = await FanInverseRequest.create(data);
 
+    const { paymentDoc, clientSecret } = await createSessionPayment({
+      user: checkUser,
+      session,
+      quantity,
+
+      meta: {
+        fanRequestId: newRequest._id,
+        talentId: talentUser._id,
+        talentName,
+        date,
+        time,
+        location,
+      },
+    });
     // Store notification for fan
     await Notification.create({
       userId: checkUser._id,
@@ -122,7 +155,19 @@ export const createFanRequest = async (req, res) => {
 
     // Send email to fan
     await sendMail(checkUser.email, subject, message);
-    res.status(201).json({ success: true, data: newRequest });
+    res.status(201).json({
+      success: true,
+      data: {
+        request: newRequest,
+        payment: {
+          id: paymentDoc._id,
+          status: paymentDoc.status,
+          amount: paymentDoc.amount,
+          currency: paymentDoc.currency,
+          clientSecret, // pass to frontend to confirm with Stripe.js
+        },
+      },
+    });
   } catch (error) {
     console.error("Error confirming request:", error);
     res.status(500).json({ success: false, message: error.message });

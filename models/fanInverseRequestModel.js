@@ -46,6 +46,13 @@ const fanInverseRequestSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Session",
     },
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment",
+    },
+    paymentStatus: {
+      type: String,
+    },
   },
   { timestamps: true }
 );

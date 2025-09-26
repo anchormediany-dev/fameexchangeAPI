@@ -11,10 +11,16 @@ const paymentSchema = new mongoose.Schema(
     eventId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Event",
-      required: true,
     },
+    sessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Session",
+    },
+    // NEW: categorize payments
+    type: { type: String, enum: ["session", "event"], required: true },
     quantity: { type: Number, default: 1 },
     currency: { type: String, default: "usd" },
+    paidAt: { type: Date },
     unitPrice: { type: Number, required: true }, // major units (e.g., 29.99)
     amount: { type: Number, required: true }, // total major units
     amountInMinor: { type: Number, required: true }, // e.g., cents

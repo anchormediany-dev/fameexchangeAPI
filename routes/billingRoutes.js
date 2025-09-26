@@ -22,6 +22,7 @@ router.post(
   auth_token,
   createPaymentIntent
 );
+
 router.post("/confirm", auth_key_header, auth_token, confirmPaymentIntent);
 router.get(
   "/transactions",

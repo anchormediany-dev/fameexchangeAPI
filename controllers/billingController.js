@@ -23,6 +23,20 @@ function assert(v, msg, code = 400) {
   }
 }
 
+export async function ensureStripeCustomer(user) {
+  if (user.stripeCustomerId) return user.stripeCustomerId;
+
+  const customer = await stripe.customers.create({
+    email: user.email,
+    name: user.name,
+    metadata: { userId: String(user._id) },
+  });
+
+  user.stripeCustomerId = customer.id;
+  await user.save();
+  return customer.id;
+}
+
 // GET /api/billing/quote?eventId=...&quantity=1
 export const getQuote = async (req, res, next) => {
   try {
@@ -399,6 +413,69 @@ export const stripeWebhook = async (req, res, next) => {
   }
 };
 
+// *********************************************  stripe payment for sessions *********************************************
+
+// ---------- core creators ----------
+/**
+ * Creates a PaymentIntent and a Payment doc for a SESSION purchase.
+ * Returns { paymentDoc, paymentIntent, clientSecret }
+ */
+export async function createSessionPayment({
+  user,
+  session,
+
+  quantity = 1,
+  meta = {},
+}) {
+  const currency = (session.currency || "usd").toLowerCase();
+  const unitPrice = Number(session.price ?? 0);
+  const qty = Math.max(1, Number(quantity));
+  const amount = unitPrice * qty; // major units
+  const amountInMinor = toMinorUnits(amount, currency);
+
+  if (amountInMinor <= 0) {
+    throw new Error("Invalid session amount (<= 0).");
+  }
+
+  const customerId = await ensureStripeCustomer(user);
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: amountInMinor,
+    currency,
+    customer: customerId,
+    automatic_payment_methods: { enabled: true }, // client will confirm
+    metadata: {
+      type: "session",
+      userId: String(user._id),
+      sessionId: String(session._id),
+      ...(meta?.fanRequestId
+        ? { fanRequestId: String(meta.fanRequestId) }
+        : {}),
+      ...(meta?.talentId ? { talentId: String(meta.talentId) } : {}),
+    },
+  });
+
+  const paymentDoc = await Payment.create({
+    userId: user._id,
+    sessionId: session._id,
+    type: "session",
+    quantity: qty,
+    currency,
+    unitPrice,
+    amount,
+    amountInMinor,
+    provider: "stripe",
+    stripePaymentIntentId: paymentIntent.id,
+    status: paymentIntent.status,
+    meta, // keep any useful references (fanRequestId, talentName, date/time, etc.)
+  });
+
+  return {
+    paymentDoc,
+    paymentIntent,
+    clientSecret: paymentIntent.client_secret,
+  };
+}
 const ALLOWED_STATUSES = new Set([
   "requires_payment_method",
   "requires_confirmation",

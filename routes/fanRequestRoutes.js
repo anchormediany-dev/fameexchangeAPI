@@ -11,10 +11,15 @@ import {
 import auth_token from "../middleware/auth_token.js";
 import auth_key_header from "../middleware/auth_key_header.js";
 import auth_admin from "../middleware/auth_admin.js";
+import { handleStripeWebhook } from "../services/stripePaymentService.js";
 
 const router = express.Router();
 
 router.post("/", auth_token, auth_key_header, createFanRequest);
+
+// ****************** stripe payment for fan request `**********************
+router.post("/session/webhook", handleStripeWebhook);
+
 router.get("/", auth_admin, auth_key_header, getAllRequests);
 router.get("/get-all", auth_token, auth_key_header, getOverAllRequests);
 router.get("/:id", auth_token, auth_key_header, getRequestById);

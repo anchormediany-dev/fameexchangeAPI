@@ -160,7 +160,6 @@ export const deleteSession = async (req, res) => {
   try {
     const deleted = await Session.findOneAndDelete({
       _id: req.params.id,
-      createdBy: req.user._id,
     });
 
     if (!deleted)
