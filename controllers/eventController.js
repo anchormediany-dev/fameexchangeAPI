@@ -153,9 +153,6 @@ import axios from "axios";
 //         ? req.files.event_images.map((file) => file.path)
 //         : [];
 
-//     // console.log("Event images:", eventimages);
-//     // console.log("req.files?.event_images:", req.files?.event_images);
-
 //     const event = new Event({
 //       userId: user._id,
 //       datetime,
@@ -340,8 +337,6 @@ export const createEvent = async (req, res) => {
           address: address || "",
           city: location || "",
         });
-
-        // console.log("computedCoords", computedCoords);
       } catch (geoErr) {
         return res.status(400).json({
           success: false,
