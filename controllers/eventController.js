@@ -621,6 +621,7 @@ export const updateEvent = async (req, res) => {
     event.price = price;
     event.is_free = is_free;
     event.totalSoldTickets = totalSoldTickets;
+    event.talent = talent;
 
     const updated = await event.save();
 
