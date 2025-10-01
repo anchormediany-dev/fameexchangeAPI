@@ -19,7 +19,7 @@ import axios from "axios";
 //       phone,
 //       website,
 //       organizername,
-//       regular_price,
+
 //       discount_percent,
 //       discount_codes,
 //       event_coordinates,
@@ -178,7 +178,7 @@ import axios from "axios";
 //       event_cover: eventcover,
 //       event_images: eventimages,
 //       is_featured,
-//       regular_price,
+
 //       discount_percent,
 //       discount_codes: parsedDiscountCodes,
 //       event_coordinates: parsedCoordinates,
@@ -206,7 +206,7 @@ export const createEvent = async (req, res) => {
       phone,
       website,
       organizername,
-      regular_price,
+
       discount_percent,
       discount_codes,
       event_coordinates,
@@ -371,7 +371,7 @@ export const createEvent = async (req, res) => {
       event_cover: eventcover,
       event_images: eventimages,
       is_featured,
-      regular_price,
+
       discount_percent,
       discount_codes: parsedDiscountCodes,
       no_of_tickets,
@@ -536,7 +536,7 @@ export const updateEvent = async (req, res) => {
       phone,
       website,
       organizername,
-      regular_price,
+
       discount_percent,
       discount_codes,
       event_coordinates,
@@ -613,7 +613,7 @@ export const updateEvent = async (req, res) => {
       is_featured !== undefined
         ? is_featured === "true" || is_featured === true
         : event.is_featured;
-    event.regular_price = regular_price || event.regular_price;
+
     event.discount_percent = discount_percent || event.discount_percent;
     event.discount_codes = parsedDiscountCodes;
     event.event_coordinates = parsedCoordinates;
