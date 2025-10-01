@@ -24,6 +24,7 @@ import reminderRoutes from "./routes/remindersRoutes.js";
 import newsletterRoutes from "./routes/newsletterRoutes.js";
 import teamRoutes from "./routes/teamRoutes.js";
 import faqRoutes from "./routes/faqRoutes.js";
+import sponsorshipRoutes from "./routes/sponsorshipRoutes.js";
 import billingRoutes from "./routes/billingRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
@@ -71,6 +72,10 @@ app.use("/api/faqs", faqRoutes);
 app.use("/api/reminders", reminderRoutes);
 //stripe billing routes
 app.use("/api/billing", billingRoutes);
+
+// sponsorship routes
+app.use("/api/sponsorships", sponsorshipRoutes);
+
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {

@@ -51,7 +51,9 @@ export const addFriend = async (req, res) => {
 export const getFriendsByUser = async (req, res) => {
   try {
     const { _id: userId } = req.user;
-    const friends = await Friend.find({ userId }).sort({ dateAdded: -1 });
+    const friends = await Friend.find({ userId })
+      .sort({ dateAdded: -1 })
+      .populate("friendId", "images name email phone");
     if (friends.length === 0) {
       return res
         .status(404)
