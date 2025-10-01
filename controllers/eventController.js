@@ -215,6 +215,7 @@ export const createEvent = async (req, res) => {
       price,
       is_free,
       totalSoldTickets,
+      no_of_tickets,
     } = req.body;
 
     const missingFields = [];
@@ -373,6 +374,7 @@ export const createEvent = async (req, res) => {
       regular_price,
       discount_percent,
       discount_codes: parsedDiscountCodes,
+      no_of_tickets,
       event_coordinates: coords, // ← lat/lng + extras
       geo: {
         type: "Point",
@@ -541,6 +543,7 @@ export const updateEvent = async (req, res) => {
       is_featured,
       price,
       is_free,
+      no_of_tickets,
       totalSoldTickets,
     } = req.body;
 
@@ -614,9 +617,10 @@ export const updateEvent = async (req, res) => {
     event.discount_percent = discount_percent || event.discount_percent;
     event.discount_codes = parsedDiscountCodes;
     event.event_coordinates = parsedCoordinates;
-    (event.price = price),
-      (event.is_free = is_free),
-      (event.totalSoldTickets = totalSoldTickets);
+    event.no_of_tickets = no_of_tickets;
+    event.price = price;
+    event.is_free = is_free;
+    event.totalSoldTickets = totalSoldTickets;
 
     const updated = await event.save();
 
