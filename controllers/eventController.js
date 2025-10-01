@@ -524,6 +524,7 @@ export const updateEvent = async (req, res) => {
       datetime,
       title,
       summary,
+      talent,
       details,
       event_type,
       status,
@@ -538,6 +539,9 @@ export const updateEvent = async (req, res) => {
       discount_codes,
       event_coordinates,
       is_featured,
+      price,
+      is_free,
+      totalSoldTickets,
     } = req.body;
 
     const eventId = req.params.id;
@@ -610,6 +614,9 @@ export const updateEvent = async (req, res) => {
     event.discount_percent = discount_percent || event.discount_percent;
     event.discount_codes = parsedDiscountCodes;
     event.event_coordinates = parsedCoordinates;
+    (event.price = price),
+      (event.is_free = is_free),
+      (event.totalSoldTickets = totalSoldTickets);
 
     const updated = await event.save();
 
