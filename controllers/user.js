@@ -11,6 +11,7 @@ import Networth from "../models/networth.js";
 import fanInverseRequestModel from "../models/fanInverseRequestModel.js";
 import TeamMember from "../models/teamMember.js";
 import sessionModel from "../models/sessionModel.js";
+import sponsorshipModel from "../models/sponsorshipModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -457,15 +458,27 @@ export const getTalentOverview = async (req, res) => {
       .select("userId friendId friendName status notes createdAt updatedAt")
       .lean();
 
+    const sponsershipsQ = await sponsorshipModel
+      .find({ sponsoredId: talentId })
+      .populate("userId", "name email _id images token_brand_name")
+      .populate("sponsoredId", "name email _id images token_brand_name");
+
     // Wait for profile (used for event matching by stage_name as a fallback)
-    const [profile, sessions, confirmations, friendships, pending] =
-      await Promise.all([
-        profileQ,
-        sessionsQ,
-        confirmationsQ,
-        friendshipsQ,
-        pendingReq,
-      ]);
+    const [
+      profile,
+      sessions,
+      confirmations,
+      friendships,
+      pending,
+      sponserships,
+    ] = await Promise.all([
+      profileQ,
+      sessionsQ,
+      confirmationsQ,
+      friendshipsQ,
+      pendingReq,
+      sponsershipsQ,
+    ]);
 
     if (!profile) {
       return res
@@ -536,6 +549,7 @@ export const getTalentOverview = async (req, res) => {
         friends,
         networth,
         pending,
+        sponserships,
         // pendingReqs,
         // friendships,
         // Events where this talent is creator, tagged in `talent[]`, or attending
@@ -547,6 +561,7 @@ export const getTalentOverview = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 export const getFanOverview = async (req, res) => {
   try {
     const paramId = req.params?.id; // optional: /api/fan/:id/overview
@@ -711,6 +726,11 @@ export const getFanOverview = async (req, res) => {
       eventsQ,
     ]);
 
+    const sponserships = await sponsorshipModel
+      .find({ userId: fanId })
+      .populate("userId", "name email _id images token_brand_name")
+      .populate("sponsoredId", "name email _id images token_brand_name");
+
     if (!profile) {
       return res.status(404).json({ success: false, message: "Fan not found" });
     }
@@ -720,6 +740,7 @@ export const getFanOverview = async (req, res) => {
       data: {
         profile,
         rescheduledRequests,
+        sponserships,
         interestedEvents, // only "interested" events for this fan
       },
     });
