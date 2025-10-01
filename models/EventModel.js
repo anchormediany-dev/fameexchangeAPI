@@ -47,6 +47,7 @@ const eventSchema = new mongoose.Schema(
     regular_price: { type: Number },
     discount_percent: { type: Number },
     discount_codes: [{ type: String }],
+    purchased_url: [{ type: String }],
 
     event_coordinates: {
       lat: { type: Number },

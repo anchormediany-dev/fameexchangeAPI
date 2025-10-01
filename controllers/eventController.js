@@ -216,6 +216,7 @@ export const createEvent = async (req, res) => {
       is_free,
       totalSoldTickets,
       no_of_tickets,
+      purchased_url,
     } = req.body;
 
     const missingFields = [];
@@ -313,6 +314,10 @@ export const createEvent = async (req, res) => {
         talent = s.split(",");
       }
     }
+    let parsedPurchaseUrl = null;
+    if (purchased_url) {
+      parsedPurchaseUrl = JSON.parse(purchased_url);
+    }
     talent = (Array.isArray(talent) ? talent : [])
       .map((id) => String(id).trim())
       .filter(Boolean);
@@ -371,7 +376,7 @@ export const createEvent = async (req, res) => {
       event_cover: eventcover,
       event_images: eventimages,
       is_featured,
-
+      purchased_url: parsedPurchaseUrl,
       discount_percent,
       discount_codes: parsedDiscountCodes,
       no_of_tickets,
@@ -536,7 +541,7 @@ export const updateEvent = async (req, res) => {
       phone,
       website,
       organizername,
-
+      purchased_url,
       discount_percent,
       discount_codes,
       event_coordinates,
@@ -563,6 +568,11 @@ export const updateEvent = async (req, res) => {
     // ✅ Parse fields
     let parsedDiscountCodes = event.discount_codes;
     let parsedCoordinates = event.event_coordinates;
+
+    let parsedPurchaseUrl = null;
+    if (purchased_url) {
+      parsedPurchaseUrl = JSON.parse(purchased_url);
+    }
 
     if (discount_codes) {
       try {
@@ -620,6 +630,7 @@ export const updateEvent = async (req, res) => {
     event.no_of_tickets = no_of_tickets;
     event.price = price;
     event.is_free = is_free;
+    event.purchased_url = parsedPurchaseUrl;
     event.totalSoldTickets = totalSoldTickets;
     event.talent = talent;
 
