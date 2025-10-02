@@ -510,7 +510,7 @@ export const getEventUserById = async (req, res) => {
       )
       .lean();
 
-    console.log(event);
+    // console.log(event);
     if (!event)
       return res.status(404).json({ success: false, error: "Event not found" });
     res.status(200).json({ success: true, data: event });

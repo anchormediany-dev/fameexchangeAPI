@@ -6,9 +6,9 @@ export function toMinorUnits(amountMajor, currency = "usd") {
 
 export function calcUnitPriceFromEvent(eventDoc) {
   // Priority: explicit `price` → else `regular_price - discount_percent`
-  if (typeof eventDoc?.price === "number") return Math.max(eventDoc.price, 0);
+  // if (typeof eventDoc?.price === "number") return Math.max(eventDoc.price, 0);
 
-  const base = Number(eventDoc?.regular_price ?? 0);
+  const base = Number(eventDoc?.price ?? 0);
   const discountPct = Number(eventDoc?.discount_percent ?? 0);
   const discounted = base * (1 - Math.min(Math.max(discountPct, 0), 100) / 100);
   return Math.max(discounted, 0);

@@ -83,6 +83,7 @@ export const createPaymentIntent = async (req, res, next) => {
       customerId, // optional if you manage Stripe Customers
       attendees,
       no_of_persons,
+      type = "event",
     } = req.body;
 
     assert(eventId, "Missing eventId");
@@ -137,7 +138,9 @@ export const createPaymentIntent = async (req, res, next) => {
     // assert(quantity <= remaining, "Not enough seats available", 400);
 
     const unitPrice = calcUnitPriceFromEvent(event);
+
     const amount = safeTotal(unitPrice, admitCount);
+
     const amountInMinor = toMinorUnits(amount, currency);
     assert(amountInMinor >= 50, "Amount too small", 400); // min $0.50
 
@@ -151,7 +154,6 @@ export const createPaymentIntent = async (req, res, next) => {
 
         { new: true }
       );
-      console.log(evtAfter);
 
       if (!evtAfter) {
         return res
@@ -176,6 +178,7 @@ export const createPaymentIntent = async (req, res, next) => {
         userId,
         eventId: event._id,
         quantity: admitCount,
+        type,
         currency,
         unitPrice: 0,
         amount: 0,
@@ -250,6 +253,7 @@ export const createPaymentIntent = async (req, res, next) => {
       amount,
     });
   } catch (e) {
+    console.log("error", e);
     next(e);
   }
 };
