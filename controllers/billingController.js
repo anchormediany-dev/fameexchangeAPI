@@ -7,6 +7,7 @@ import Payment from "../models/paymentModel.js";
 import Ticket from "../models/ticketModel.js";
 import {
   calcUnitPriceFromEvent,
+  getDiscountPercentFromEvent,
   safeTotal,
   toMinorUnits,
 } from "../utils/money.js";
@@ -82,6 +83,7 @@ export const createPaymentIntent = async (req, res, next) => {
       save_payment_method = false,
       customerId, // optional if you manage Stripe Customers
       attendees,
+      discount_code,
       no_of_persons,
       type = "event",
     } = req.body;
@@ -137,11 +139,17 @@ export const createPaymentIntent = async (req, res, next) => {
       (Number(event.totalSoldTickets) || 0);
     // assert(quantity <= remaining, "Not enough seats available", 400);
 
-    const unitPrice = calcUnitPriceFromEvent(event);
-
+    const codePct = getDiscountPercentFromEvent(event, discount_code);
+    const unitPrice = calcUnitPriceFromEvent(event, codePct);
+    // Then compute totals:
     const amount = safeTotal(unitPrice, admitCount);
-
     const amountInMinor = toMinorUnits(amount, currency);
+
+    // console.log("codepct", codePct);
+    // console.log("unitPrice", unitPrice);
+    // console.log("amount", amount);
+    // console.log("amountInMinor", amountInMinor);
+
     assert(amountInMinor >= 50, "Amount too small", 400); // min $0.50
 
     // ===== FREE FLOW =====

@@ -9,6 +9,10 @@ const prefrences = new mongoose.Schema({
   },
   event_type: { type: String, enum: ["live", "virtual"], required: true },
 });
+const DiscountSchema = new mongoose.Schema({
+  discount_percent: { type: Number, min: 0, max: 100 },
+  discount_codes: { type: String, trim: true },
+});
 const eventSchema = new mongoose.Schema(
   {
     userId: {
@@ -44,9 +48,7 @@ const eventSchema = new mongoose.Schema(
 
     is_featured: { type: Boolean, default: false },
 
-    regular_price: { type: Number },
-    discount_percent: { type: Number },
-    discount_codes: [{ type: String }],
+    discount: [DiscountSchema],
     purchased_url: [{ type: String }],
 
     event_coordinates: {

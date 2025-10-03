@@ -9,6 +9,8 @@ import {
   getEventUserById,
   getMonthlyEvents,
   setEventPreference,
+  updateDiscountPercent,
+  deleteDiscountByIdOrCode,
 } from "../controllers/eventController.js";
 
 import auth_token from "../middleware/auth_token.js";
@@ -45,7 +47,19 @@ router.post(
   setEventPreference
 );
 router.get("/:id", auth_key_header, getEventById);
+router.patch(
+  "/:eventId/discounts/:discountId",
+  auth_key_header,
+  auth_admin,
+  updateDiscountPercent
+);
 router.put("/:id", uploadFields, auth_key_header, auth_admin, updateEvent);
 router.delete("/:id", auth_key_header, auth_admin, deleteEvent);
+router.delete(
+  "/:eventId/discounts/:discountId",
+  auth_key_header,
+  auth_admin,
+  deleteDiscountByIdOrCode
+);
 
 export default router;

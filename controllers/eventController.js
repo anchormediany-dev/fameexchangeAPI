@@ -188,6 +188,18 @@ import axios from "axios";
 //   }
 // };
 
+const isId = (v) => mongoose.Types.ObjectId.isValid(v);
+const norm = (s) => String(s || "").trim();
+const key = (s) => norm(s).toLowerCase();
+
+function assert(cond, msg = "Bad Request", status = 400) {
+  if (!cond) {
+    const e = new Error(msg);
+    e.status = status;
+    throw e;
+  }
+}
+
 export const createEvent = async (req, res) => {
   try {
     const {
@@ -203,7 +215,7 @@ export const createEvent = async (req, res) => {
       phone,
       website,
       organizername,
-
+      discounts,
       discount_percent,
       discount_codes,
       event_coordinates,
@@ -256,17 +268,123 @@ export const createEvent = async (req, res) => {
     }
 
     // Parse JSON-ish inputs
-    let parsedDiscountCodes = [];
-    if (discount_codes) {
+    // --- Normalize discounts ---
+    // Priority: `discounts` array of objects -> else combine discount_percent + discount_codes
+    // let discountDocs = [];
+    // console.log("discounts", discounts);
+    // if (Array.isArray(discounts) && discounts.length) {
+    //   discountDocs = discounts
+    //     .map((d) => ({
+    //       discount_percent: Number(d.discount_percent),
+    //       discount_code: String(
+    //         d.discount_code || d.discount_codes || ""
+    //       ).trim(),
+    //     }))
+    //     .filter(
+    //       (d) =>
+    //         Number.isFinite(d.discount_percent) &&
+    //         d.discount_percent >= 0 &&
+    //         d.discount_percent <= 100 &&
+    //         d.discount_code
+    //     );
+    // }
+
+    // console.log(discountDocs);
+
+    // --- normalize discounts into `discount` (array of {discount_percent, discount_codes}) ---
+    function normalizeStringArray(val) {
+      if (!val) return [];
+      if (Array.isArray(val))
+        return val.map((v) => String(v).trim()).filter(Boolean);
+      const s = String(val).trim();
+      if (!s) return [];
       try {
-        parsedDiscountCodes = Array.isArray(discount_codes)
-          ? discount_codes
-          : JSON.parse(discount_codes);
+        const parsed = JSON.parse(s); // valid JSON array? great.
+        return Array.isArray(parsed)
+          ? parsed.map((v) => String(v).trim()).filter(Boolean)
+          : [s];
       } catch {
+        // CSV fallback
+        return s
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+      }
+    }
+
+    function tryParseJsonLoosely(s) {
+      // Accept strings like: [{discount_percent:10,discount_codes:"SUMMER2025"}]
+      // Add quotes around bare keys to make it JSON-ish.
+      const fixed = s.replace(
+        /([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g,
+        '$1"$2"$3'
+      ); // quote keys
+      return JSON.parse(fixed);
+    }
+
+    let discountDocs = [];
+    if (req.body.discounts) {
+      // Accept array, JSON string, or pseudo-JSON string
+      if (Array.isArray(req.body.discounts)) {
+        discountDocs = req.body.discounts;
+      } else if (typeof req.body.discounts === "string") {
+        try {
+          // try strict JSON first
+          discountDocs = JSON.parse(req.body.discounts);
+        } catch {
+          // try to coerce pseudo-JSON
+          try {
+            discountDocs = tryParseJsonLoosely(req.body.discounts);
+          } catch {
+            return res.status(400).json({
+              success: false,
+              error:
+                'Invalid discounts format. Send an array or valid JSON string, e.g. [{"discount_percent":10,"discount_codes":"SUMMER2025"}]',
+            });
+          }
+        }
+      }
+      if (!Array.isArray(discountDocs)) {
         return res
           .status(400)
-          .json({ success: false, error: "Invalid discount_codes format" });
+          .json({ success: false, error: "discounts must be an array" });
       }
+      // sanitize
+      discountDocs = discountDocs
+        .map((d) => ({
+          discount_percent: Number(d.discount_percent),
+          discount_codes: String(d.discount_codes || "").trim(),
+        }))
+        .filter(
+          (d) =>
+            Number.isFinite(d.discount_percent) &&
+            d.discount_percent >= 0 &&
+            d.discount_percent <= 100 &&
+            d.discount_codes
+        );
+    } else if (
+      req.body.discount_percent != null ||
+      req.body.discount_codes != null
+    ) {
+      // legacy inputs: single percent + one or many codes
+      const percent = Number(req.body.discount_percent);
+      const codes = normalizeStringArray(req.body.discount_codes);
+      if (
+        !Number.isFinite(percent) ||
+        percent < 0 ||
+        percent > 100 ||
+        codes.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Provide a valid discount_percent (0–100) and at least one discount_codes value",
+        });
+      }
+      discountDocs = codes.map((code) => ({
+        discount_percent: percent,
+        discount_codes: code,
+      }));
     }
 
     let parsedCoordinates = null;
@@ -372,8 +490,9 @@ export const createEvent = async (req, res) => {
       event_images: eventimages,
       is_featured,
       purchased_url: parsedPurchaseUrl,
+      discount: discountDocs,
       discount_percent,
-      discount_codes: parsedDiscountCodes,
+      discount_codes,
       no_of_tickets,
       event_coordinates: coords, // ← lat/lng + extras
       geo: {
@@ -671,6 +790,115 @@ export const deleteEvent = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+/**
+ * DELETE /:eventId/discounts/:discountId?
+ * Query alternative: ?code=SUMMER2025
+ */
+export async function deleteDiscountByIdOrCode(req, res, next) {
+  try {
+    const { eventId, discountId } = req.params;
+    const queryCode = req.query.code;
+
+    assert(isId(eventId), "Invalid eventId");
+    // await mustBeAdmin(req.user?._id);
+
+    assert(
+      discountId || queryCode,
+      "Provide :discountId or ?code= to select a discount"
+    );
+
+    const match =
+      discountId && isId(discountId)
+        ? { _id: eventId, "discounts._id": discountId }
+        : { _id: eventId };
+
+    // If deleting by code, we’ll use $pull with case-insensitive match via JS (Mongoose) rather than Mongo regex to keep it simple/portable.
+    const event = await Event.findById(eventId);
+    assert(event, "Event not found", 404);
+
+    const before = event.discount?.length || 0;
+
+    if (discountId && isId(discountId)) {
+      event.discount = (event.discount || []).filter(
+        (d) => String(d._id) !== String(discountId)
+      );
+    } else {
+      const key = normCodeKey(queryCode);
+      event.discount = (event.discount || []).filter(
+        (d) => normCodeKey(d.discount_code ?? d.discount_codes) !== key
+      );
+    }
+
+    const after = event.discount.length;
+    assert(after < before, "Discount not found", 404);
+
+    await event.save();
+    return res.json({
+      success: true,
+      removed: before - after,
+      discount: event.discount,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+//update discount
+export async function updateDiscountPercent(req, res, next) {
+  try {
+    const { eventId, discountId } = req.params;
+    const code = req.query.code; // optional alternative to :discountId
+    assert(isId(eventId), "Invalid eventId");
+
+    const pct = Number(req.body?.discount_percent);
+    assert(
+      Number.isFinite(pct) && pct >= 0 && pct <= 100,
+      "discount_percent must be 0..100"
+    );
+
+    // ---- Path A: update by discount _id with positional operator ----
+    if (discountId && isId(discountId)) {
+      const upd = await Event.updateOne(
+        { _id: eventId, "discount._id": discountId },
+        { $set: { "discount.$.discount_percent": pct } }
+      );
+      assert(upd.matchedCount === 1, "Discount not found", 404);
+
+      const updated = await Event.findById(eventId, { discount: 1 }).lean();
+      const item = updated.discount.find(
+        (d) => String(d._id) === String(discountId)
+      );
+      return res.json({
+        success: true,
+        discount: item,
+        discounts: updated.discount,
+      });
+    }
+
+    // ---- Path B: update by code (?code=) case-insensitive ----
+    assert(code, "Provide :discountId or ?code=");
+    const event = await Event.findById(eventId);
+    assert(event, "Event not found", 404);
+
+    const idx = (event.discount || []).findIndex(
+      (d) => normKey(d.discount_code ?? d.discount_codes) === normKey(code)
+    );
+    assert(idx >= 0, "Discount not found", 404);
+
+    // Only update the percent; do NOT touch the code
+    event.discount[idx].discount_percent = pct;
+    await event.save();
+
+    return res.json({
+      success: true,
+      discount: event.discount[idx],
+      discounts: event.discount,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
 
 // Searched Events
 

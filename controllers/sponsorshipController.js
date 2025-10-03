@@ -278,7 +278,6 @@ export const allListSponsorships = async (req, res) => {
         hasNext,
         prevPage,
         nextPage,
-        links, // helpful navigation links
       },
     });
   } catch (e) {
