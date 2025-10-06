@@ -12,6 +12,7 @@ import fanInverseRequestModel from "../models/fanInverseRequestModel.js";
 import TeamMember from "../models/teamMember.js";
 import sessionModel from "../models/sessionModel.js";
 import sponsorshipModel from "../models/sponsorshipModel.js";
+import Notification from "../models/notificationModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -427,6 +428,9 @@ export const getTalentOverview = async (req, res) => {
     const profileQ = User.findById(talentId)
       .select(privateUserProjection)
       .lean();
+    const notificationQ = Notification.find({ userId: talentId })
+      .select(privateUserProjection)
+      .lean();
 
     const sessionsQ = Session.find({ createdBy: talentId })
       .sort({ sessionDate: 1, sessionTime: 1 })
@@ -471,6 +475,7 @@ export const getTalentOverview = async (req, res) => {
       friendships,
       pending,
       sponserships,
+      notifications,
     ] = await Promise.all([
       profileQ,
       sessionsQ,
@@ -478,6 +483,7 @@ export const getTalentOverview = async (req, res) => {
       friendshipsQ,
       pendingReq,
       sponsershipsQ,
+      notificationQ,
     ]);
 
     if (!profile) {
@@ -550,6 +556,8 @@ export const getTalentOverview = async (req, res) => {
         networth,
         pending,
         sponserships,
+        notifications,
+        // confirmations,
         // pendingReqs,
         // friendships,
         // Events where this talent is creator, tagged in `talent[]`, or attending
@@ -638,6 +646,10 @@ export const getFanOverview = async (req, res) => {
     // --- Profile
     const profileQ = User.findById(fanId).select(privateUserProjection).lean();
 
+    const notificationQ = Notification.find({ userId: fanId })
+      .select(privateUserProjection)
+      .lean();
+
     // --- Requests: rescheduled first, then others (populated), paginated & sorted
     const { ObjectId } = mongoose.Types;
     const baseMatch = {
@@ -720,11 +732,13 @@ export const getFanOverview = async (req, res) => {
       .limit(evLimit)
       .lean();
 
-    const [profile, rescheduledRequests, interestedEvents] = await Promise.all([
-      profileQ,
-      rescheduledRequestsQ,
-      eventsQ,
-    ]);
+    const [profile, rescheduledRequests, interestedEvents, notifications] =
+      await Promise.all([
+        profileQ,
+        rescheduledRequestsQ,
+        eventsQ,
+        notificationQ,
+      ]);
 
     const sponserships = await sponsorshipModel
       .find({ userId: fanId })
@@ -741,11 +755,12 @@ export const getFanOverview = async (req, res) => {
         profile,
         rescheduledRequests,
         sponserships,
+        notifications,
         interestedEvents, // only "interested" events for this fan
       },
     });
   } catch (err) {
-    console.error("getTalentOverview error:", err);
+    console.error("fan  error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
