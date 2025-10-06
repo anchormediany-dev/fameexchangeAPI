@@ -154,8 +154,14 @@ export const allListSponsorships = async (req, res) => {
         .sort(sortObj)
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate("userId", "name email _id images token_brand_name role")
-        .populate("sponsoredId", "name email _id images token_brand_name role"),
+        .populate(
+          "userId",
+          "name email _id images token_brand_name role talent"
+        )
+        .populate(
+          "sponsoredId",
+          "name email _id images token_brand_name role talent"
+        ),
       Sponsorship.countDocuments(filter),
     ]);
 
