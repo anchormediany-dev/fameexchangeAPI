@@ -196,6 +196,7 @@ export const allListSponsorships = async (req, res) => {
             images: "$user.images",
             token_brand_name: "$user.token_brand_name",
             role: "$user.role",
+            talent: "$user.talent",
             count: 1,
             latestAt: 1,
           },
