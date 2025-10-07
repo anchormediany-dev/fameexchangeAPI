@@ -284,6 +284,14 @@ function toDiscounts(body) {
     : [];
 }
 
+// coordinate validators
+function isValidLat(v) {
+  return typeof v === "number" && Number.isFinite(v) && v >= -90 && v <= 90;
+}
+function isValidLng(v) {
+  return typeof v === "number" && Number.isFinite(v) && v >= -180 && v <= 180;
+}
+
 export const createEvent = async (req, res) => {
   try {
     // auth
@@ -323,6 +331,66 @@ export const createEvent = async (req, res) => {
     const logo = req.files?.logo?.[0]?.path;
     const event_cover = req.files?.event_cover?.[0]?.path;
     const event_images = (req.files?.event_images || []).map((f) => f.path);
+
+    // ------------------ COORDINATES LOGIC (do not skip) ------------------
+
+    // 1) Parse incoming `event_coordinates` if provided
+    let parsedCoordinates = null;
+    if (req.body.event_coordinates) {
+      try {
+        parsedCoordinates =
+          typeof req.body.event_coordinates === "string"
+            ? JSON.parse(req.body.event_coordinates)
+            : req.body.event_coordinates;
+      } catch {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid event_coordinates format" });
+      }
+    }
+
+    // 2) Auto-geocode if coordinates not provided
+    let computedCoords = parsedCoordinates;
+    if (!computedCoords) {
+      try {
+        computedCoords = await geocodeAddress({
+          address: req.body.address || "",
+          city: location || "",
+        });
+        // expected shape: { lat: number, lng: number }
+      } catch (geoErr) {
+        return res.status(400).json({
+          success: false,
+          error: `Could not geocode address: ${geoErr.message}`,
+        });
+      }
+    }
+
+    // 3) Normalize and validate numeric lat/lng
+    const coords = {
+      lat: Number(computedCoords?.lat),
+      lng: Number(computedCoords?.lng),
+    };
+    if (!isValidLat(coords.lat) || !isValidLng(coords.lng)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Invalid coordinates: require numeric lat (-90..90) and lng (-180..180)",
+      });
+    }
+
+    // 4) Prepare both fields:
+    // - event_coordinates: {lat, lng, ...extras if you want}
+    // - geo: GeoJSON Point with [lng, lat]
+    const event_coordinates = {
+      ...computedCoords, // keep any extras from geocoder if present
+      lat: coords.lat,
+      lng: coords.lng,
+    };
+    const geo = {
+      type: "Point",
+      coordinates: [coords.lng, coords.lat], // always [lng, lat]
+    };
 
     // normalize fields to schema
     const doc = {
@@ -371,22 +439,19 @@ export const createEvent = async (req, res) => {
       // purchased_url must be array of strings
       purchased_url: toStrArr(req.body.purchased_url),
 
-      // geo
-      event_coordinates: req.body.event_coordinates
-        ? typeof req.body.event_coordinates === "string"
-          ? JSON.parse(req.body.event_coordinates)
-          : req.body.event_coordinates
-        : undefined,
+      // coordinates (always set, because we resolved them above)
+      event_coordinates,
+      geo,
     };
 
-    // set GeoJSON if coords provided
-    if (
-      doc.event_coordinates?.lat != null &&
-      doc.event_coordinates?.lng != null
-    ) {
-      const { lat, lng } = doc.event_coordinates;
-      doc.geo = { type: "Point", coordinates: [Number(lng), Number(lat)] };
-    }
+    // // set GeoJSON if coords provided
+    // if (
+    //   doc.event_coordinates?.lat != null &&
+    //   doc.event_coordinates?.lng != null
+    // ) {
+    //   const { lat, lng } = doc.event_coordinates;
+    //   doc.geo = { type: "Point", coordinates: [Number(lng), Number(lat)] };
+    // }
 
     // optional: talent ids (array)
     if (req.body.talent) {
