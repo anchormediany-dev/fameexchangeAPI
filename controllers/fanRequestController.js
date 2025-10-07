@@ -410,7 +410,7 @@ export const rescheduleFanRequest = async (req, res) => {
       // Store notification for fan
       await Notification.create({
         userId: checkUser._id,
-        description: `You have declined ${request.talentName}'s request scheduled on ${dateOnlyFromString} at ${time}.`,
+        description: `You have ${status} ${request.talentName}'s request scheduled on ${dateOnlyFromString} at ${time}.`,
         category: "session",
         referenceModel: "FanInverseRequest",
         referenceId: request._id,

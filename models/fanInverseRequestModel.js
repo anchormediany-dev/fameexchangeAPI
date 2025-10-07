@@ -35,7 +35,7 @@ const fanInverseRequestSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "declined", "rescheduled"],
+      enum: ["pending", "accepted", "declined", "rescheduled", "completed"],
       default: "pending",
     },
     telentConfirmationId: {
