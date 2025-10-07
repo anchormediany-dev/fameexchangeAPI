@@ -200,313 +200,213 @@ function assert(cond, msg = "Bad Request", status = 400) {
   }
 }
 
+// ---- helpers ----
+const toNum = (v) => {
+  if (v === undefined || v === null || v === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+const toStrArr = (v) => {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  const s = String(v).trim();
+  if (!s) return [];
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed)
+      ? parsed.map((x) => String(x).trim()).filter(Boolean)
+      : [s];
+  } catch {
+    return s
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+};
+
+// Accepts:
+// - Proper JSON: [{"discount_percent":10,"discount_codes":"SUMMER25"}]
+// - Single quotes: [{'discount_percent':10,'discount_codes':'SUMMER25'}]
+// - Unquoted keys: [{discount_percent:10, discount_codes:"SUMMER25"}]
+// - Trailing commas
+function parseJsonArrayLenient(input) {
+  if (Array.isArray(input)) return input;
+  let s = String(input || "").trim();
+  if (!s) return [];
+
+  // make it JSON-ish
+  s = s
+    .replace(/([{,]\s*)([A-Za-z_]\w*)(\s*:)/g, '$1"$2"$3') // quote bare keys
+    .replace(/'/g, '"') // single → double quotes
+    .replace(/,\s*(}|\])/g, "$1"); // remove trailing commas
+
+  const parsed = JSON.parse(s); // may still throw; let caller catch
+  if (!Array.isArray(parsed)) throw new Error("discounts must be an array");
+  return parsed;
+}
+
+function toDiscounts(body) {
+  // New preferred shape: `discounts` (array or stringified array)
+  if (body.discounts != null) {
+    let arr;
+    try {
+      arr = parseJsonArrayLenient(body.discounts);
+    } catch (e) {
+      // throw to outer try/catch so you respond 400 instead of crashing
+      const ex = new Error(
+        'Invalid `discounts`. Send an array like [{"discount_percent":10,"discount_codes":"SUMMER25"}]. ' +
+          "Single quotes/unquoted keys/trailing commas are okay, but it must be an array."
+      );
+      ex.status = 400;
+      throw ex;
+    }
+
+    return arr
+      .map((d) => ({
+        discount_percent: toNum(d?.discount_percent),
+        discount_codes: String(d?.discount_codes ?? "").trim(),
+      }))
+      .filter(
+        (d) =>
+          Number.isFinite(d.discount_percent) &&
+          d.discount_percent >= 0 &&
+          d.discount_percent <= 100 &&
+          !!d.discount_codes
+      );
+  }
+
+  // Legacy inputs: discount_percent + discount_codes (csv/json/array)
+  const p = toNum(body.discount_percent);
+  const codes = toStrArr(body.discount_codes);
+  return Number.isFinite(p) && p >= 0 && p <= 100 && codes.length
+    ? codes.map((code) => ({ discount_percent: p, discount_codes: code }))
+    : [];
+}
+
 export const createEvent = async (req, res) => {
   try {
-    const {
-      datetime,
-      title,
-      summary,
-      details,
-      event_type,
-      status,
-      category,
-      location,
-      address,
-      phone,
-      website,
-      organizername,
-      discounts,
-      discount_percent,
-      discount_codes,
-      event_coordinates,
-      is_featured,
-      prefrence,
-      price,
-      is_free,
-      totalSoldTickets,
-      no_of_tickets,
-      purchased_url,
-    } = req.body;
-
-    const missingFields = [];
-    if (!datetime) missingFields.push("datetime");
-    if (!title) missingFields.push("title");
-    if (!summary) missingFields.push("summary");
-    if (!details) missingFields.push("details");
-    if (!event_type) missingFields.push("event_type");
-    if (!status) missingFields.push("status");
-    if (!category) missingFields.push("category");
-    if (!location) missingFields.push("location"); // city is required
-
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: `Missing required fields: ${missingFields.join(", ")}`,
-      });
-    }
-
+    // auth
     const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ success: false, error: "User not found" });
-    }
-
-    // ✅ Fix: Correct admin check
-    if (user.role !== "ADMIN") {
+    if (!user || user.role !== "ADMIN")
       return res
         .status(403)
         .json({ success: false, error: "Admin Access Required" });
-    }
 
-    // ⏰ Date-time validation
-    const eventDate = new Date(datetime);
-    const now = new Date();
-    if (isNaN(eventDate.getTime()) || eventDate.getTime() <= now.getTime()) {
+    // required
+    const { datetime, title, summary, details, status, category, location } =
+      req.body;
+    const missing = [
+      "datetime",
+      "title",
+      "summary",
+      "details",
+      "status",
+      "category",
+      "location",
+    ].filter((k) => !req.body[k]);
+    if (missing.length)
+      return res
+        .status(400)
+        .json({ success: false, error: `Missing: ${missing.join(", ")}` });
+
+    // datetime (must be future, TZ-aware string recommended)
+    const when = new Date(datetime);
+    if (Number.isNaN(when.getTime()) || when <= new Date())
       return res.status(400).json({
         success: false,
-        error: "Event date/time must be a valid datetime in the future",
+        error:
+          "Event datetime must be a valid future time (ISO 8601 with timezone recommended)",
       });
-    }
 
-    // Parse JSON-ish inputs
-    // --- Normalize discounts ---
-    // Priority: `discounts` array of objects -> else combine discount_percent + discount_codes
-    // let discountDocs = [];
-    // console.log("discounts", discounts);
-    // if (Array.isArray(discounts) && discounts.length) {
-    //   discountDocs = discounts
-    //     .map((d) => ({
-    //       discount_percent: Number(d.discount_percent),
-    //       discount_code: String(
-    //         d.discount_code || d.discount_codes || ""
-    //       ).trim(),
-    //     }))
-    //     .filter(
-    //       (d) =>
-    //         Number.isFinite(d.discount_percent) &&
-    //         d.discount_percent >= 0 &&
-    //         d.discount_percent <= 100 &&
-    //         d.discount_code
-    //     );
-    // }
+    // files (optional)
+    const logo = req.files?.logo?.[0]?.path;
+    const event_cover = req.files?.event_cover?.[0]?.path;
+    const event_images = (req.files?.event_images || []).map((f) => f.path);
 
-    // console.log(discountDocs);
-
-    // --- normalize discounts into `discount` (array of {discount_percent, discount_codes}) ---
-    function normalizeStringArray(val) {
-      if (!val) return [];
-      if (Array.isArray(val))
-        return val.map((v) => String(v).trim()).filter(Boolean);
-      const s = String(val).trim();
-      if (!s) return [];
-      try {
-        const parsed = JSON.parse(s); // valid JSON array? great.
-        return Array.isArray(parsed)
-          ? parsed.map((v) => String(v).trim()).filter(Boolean)
-          : [s];
-      } catch {
-        // CSV fallback
-        return s
-          .split(",")
-          .map((v) => v.trim())
-          .filter(Boolean);
-      }
-    }
-
-    function tryParseJsonLoosely(s) {
-      // Accept strings like: [{discount_percent:10,discount_codes:"SUMMER2025"}]
-      // Add quotes around bare keys to make it JSON-ish.
-      const fixed = s.replace(
-        /([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g,
-        '$1"$2"$3'
-      ); // quote keys
-      return JSON.parse(fixed);
-    }
-
-    let discountDocs = [];
-    if (req.body.discounts) {
-      // Accept array, JSON string, or pseudo-JSON string
-      if (Array.isArray(req.body.discounts)) {
-        discountDocs = req.body.discounts;
-      } else if (typeof req.body.discounts === "string") {
-        try {
-          // try strict JSON first
-          discountDocs = JSON.parse(req.body.discounts);
-        } catch {
-          // try to coerce pseudo-JSON
-          try {
-            discountDocs = tryParseJsonLoosely(req.body.discounts);
-          } catch {
-            return res.status(400).json({
-              success: false,
-              error:
-                'Invalid discounts format. Send an array or valid JSON string, e.g. [{"discount_percent":10,"discount_codes":"SUMMER2025"}]',
-            });
-          }
-        }
-      }
-      if (!Array.isArray(discountDocs)) {
-        return res
-          .status(400)
-          .json({ success: false, error: "discounts must be an array" });
-      }
-      // sanitize
-      discountDocs = discountDocs
-        .map((d) => ({
-          discount_percent: Number(d.discount_percent),
-          discount_codes: String(d.discount_codes || "").trim(),
-        }))
-        .filter(
-          (d) =>
-            Number.isFinite(d.discount_percent) &&
-            d.discount_percent >= 0 &&
-            d.discount_percent <= 100 &&
-            d.discount_codes
-        );
-    } else if (
-      req.body.discount_percent != null ||
-      req.body.discount_codes != null
-    ) {
-      // legacy inputs: single percent + one or many codes
-      const percent = Number(req.body.discount_percent);
-      const codes = normalizeStringArray(req.body.discount_codes);
-      if (
-        !Number.isFinite(percent) ||
-        percent < 0 ||
-        percent > 100 ||
-        codes.length === 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Provide a valid discount_percent (0–100) and at least one discount_codes value",
-        });
-      }
-      discountDocs = codes.map((code) => ({
-        discount_percent: percent,
-        discount_codes: code,
-      }));
-    }
-
-    let parsedCoordinates = null;
-    if (event_coordinates) {
-      try {
-        parsedCoordinates =
-          typeof event_coordinates === "string"
-            ? JSON.parse(event_coordinates)
-            : event_coordinates;
-      } catch {
-        return res
-          .status(400)
-          .json({ success: false, error: "Invalid event_coordinates format" });
-      }
-    }
-
-    // Handle talent (your original normalization kept)
-    let { talent } = req.body;
-    if (
-      Array.isArray(talent) &&
-      talent.length === 1 &&
-      typeof talent[0] === "string"
-    ) {
-      const s = talent[0].trim();
-      if (s.startsWith("[") && s.endsWith("]")) {
-        try {
-          talent = JSON.parse(s);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    if (typeof talent === "string") {
-      const s = talent.trim();
-      if (s.startsWith("[") && s.endsWith("]")) {
-        try {
-          talent = JSON.parse(s);
-        } catch {
-          talent = s.split(",");
-        }
-      } else {
-        talent = s.split(",");
-      }
-    }
-    let parsedPurchaseUrl = null;
-    if (purchased_url) {
-      parsedPurchaseUrl = JSON.parse(purchased_url);
-    }
-    talent = (Array.isArray(talent) ? talent : [])
-      .map((id) => String(id).trim())
-      .filter(Boolean);
-    talent = [...new Set(talent)];
-
-    // Files
-    const logo = req.files?.logo?.[0]?.path || "";
-    const eventcover = req.files?.event_cover?.[0]?.path || "";
-    const eventimages =
-      Array.isArray(req.files?.event_images) &&
-      req.files.event_images.length > 0
-        ? req.files.event_images.map((file) => file.path)
-        : [];
-
-    // 🗺️ Auto-geocode if coordinates were not provided
-    let computedCoords = parsedCoordinates;
-    if (!computedCoords) {
-      try {
-        computedCoords = await geocodeAddress({
-          address: address || "",
-          city: location || "",
-        });
-      } catch (geoErr) {
-        return res.status(400).json({
-          success: false,
-          error: `Could not geocode address: ${geoErr.message}`,
-        });
-      }
-    }
-
-    const coords = {
-      lat: Number(computedCoords.lat),
-      lng: Number(computedCoords.lng),
-    };
-
-    const event = new Event({
+    // normalize fields to schema
+    const doc = {
       userId: user._id,
-      addedby: user.role,
-      datetime,
+      datetime: when,
+
       title,
-      talent,
       summary,
       details,
-      event_type,
+
+      // NOTE: top-level event_type is NOT in schema; only inside prefrences items.
       status,
       category,
-      location, // city
-      address, // street
-      phone,
-      website,
-      organizername,
-      prefrence,
-      logo,
-      event_cover: eventcover,
-      event_images: eventimages,
-      is_featured,
-      purchased_url: parsedPurchaseUrl,
-      discount: discountDocs,
-      discount_percent,
-      discount_codes,
-      no_of_tickets,
-      event_coordinates: coords, // ← lat/lng + extras
-      geo: {
-        type: "Point",
-        coordinates: [coords.lng, coords.lat], // always [lng, lat]
-      },
-      price,
-      is_free,
-      totalSoldTickets,
-    });
+      location,
+      address: req.body.address,
+      phone: req.body.phone,
+      website: req.body.website,
 
-    const saved = await event.save();
-    res.status(201).json({ success: true, data: saved });
+      organizer_name: req.body.organizername || req.body.organizer_name,
+
+      logo,
+      event_cover,
+      event_images,
+
+      is_featured:
+        req.body.is_featured === "true"
+          ? true
+          : req.body.is_featured === "false"
+          ? false
+          : !!req.body.is_featured,
+
+      // numbers
+      price: toNum(req.body.price),
+      no_of_tickets: toNum(req.body.no_of_tickets),
+      totalSoldTickets: toNum(req.body.totalSoldTickets),
+      is_free:
+        req.body.is_free === "true"
+          ? true
+          : req.body.is_free === "false"
+          ? false
+          : !!req.body.is_free,
+
+      // discounts array in schema shape
+      discount: toDiscounts(req.body),
+
+      // purchased_url must be array of strings
+      purchased_url: toStrArr(req.body.purchased_url),
+
+      // geo
+      event_coordinates: req.body.event_coordinates
+        ? typeof req.body.event_coordinates === "string"
+          ? JSON.parse(req.body.event_coordinates)
+          : req.body.event_coordinates
+        : undefined,
+    };
+
+    // set GeoJSON if coords provided
+    if (
+      doc.event_coordinates?.lat != null &&
+      doc.event_coordinates?.lng != null
+    ) {
+      const { lat, lng } = doc.event_coordinates;
+      doc.geo = { type: "Point", coordinates: [Number(lng), Number(lat)] };
+    }
+
+    // optional: talent ids (array)
+    if (req.body.talent) {
+      const t = Array.isArray(req.body.talent)
+        ? req.body.talent
+        : req.body.talent.startsWith("[")
+        ? JSON.parse(req.body.talent)
+        : String(req.body.talent).split(",");
+      doc.talent = [...new Set(t.map((x) => String(x).trim()).filter(Boolean))];
+    }
+
+    // only pass defined keys to avoid saving undefined
+    const cleanDoc = Object.fromEntries(
+      Object.entries(doc).filter(([, v]) => v !== undefined)
+    );
+
+    const saved = await Event.create(cleanDoc);
+    return res.status(201).json({ success: true, data: saved });
   } catch (err) {
+    console.log(err);
     res.status(400).json({ success: false, error: err.message });
   }
 };
