@@ -321,78 +321,75 @@ export const stripeWebhook = async (req, res, next) => {
 
     switch (event.type) {
       case "payment_intent.succeeded": {
-        const pi = event.data.id;
+        const pi = event?.data?.object;
+        if (!pi?.id) break;
 
-        // idempotency guard: if we already finalized, bail
+        // Idempotency guard: only proceed if not already finalized
         const payment = await Payment.findOneAndUpdate(
-          { stripePaymentIntentId: pi.id },
-          { status: "succeeded" },
+          { stripePaymentIntentId: pi.id, "meta.finalized": { $ne: true } },
+          { $set: { status: "succeeded" } },
           { new: true }
         );
-        if (!payment) break; // unknown payment, ignore (or log)
-        if (payment.meta?.finalized) break; // already issued tickets before
 
-        // finalize in a transaction
-        const session = await mongoose.startSession();
-        await session.withTransaction(async () => {
-          // Re-read the Event inside the txn
-          const evt = await Event.findById(payment.eventId).session(session);
-          if (!evt) throw new Error("Event not found");
+        // Unknown payment or already finalized
+        if (!payment) break;
 
-          // hard checks at finalize time
-          if (evt.status !== "active") {
-            throw new Error("Event not active");
-          }
-          if (new Date(evt.datetime) < new Date()) {
-            throw new Error("Event already in the past");
-          }
-          const metaAttendees = Array.isArray(payment.meta?.attendees)
-            ? payment.meta.attendees
-            : [];
-          const qty = payment.quantity || 1;
-          const metaPersons = Number(payment.meta?.no_of_persons) || qty;
-          const remaining = evt.no_of_persons - evt.totalSoldTickets;
-          if (qty > remaining) {
-            // not enough seats → mark payment as failed/refund later
-            await Payment.updateOne(
-              { _id: payment._id },
-              { status: "failed", "meta.failReason": "capacity_exceeded" },
-              { session }
-            );
-            // throw new Error("Not enough seats available");
-          }
+        const qty = Number(payment.quantity) || 1;
+        const metaAttendees = Array.isArray(payment.meta?.attendees)
+          ? payment.meta.attendees
+          : [];
+        const metaPersons = Number(payment.meta?.no_of_persons) || qty;
 
-          // 1) Increment sold seats atomically
-          await Event.updateOne(
-            { _id: evt._id },
-            { $inc: { totalSoldTickets: metaPersons } },
-            { session }
-          );
+        // Atomically check capacity + event eligibility and increment sold seats
+        const eventUpdate = await Event.updateOne(
+          {
+            _id: payment.eventId,
+            status: "active",
+            datetime: { $gte: new Date() }, // event not in the past
+            // Ensure we don't exceed capacity: totalSoldTickets + metaPersons <= no_of_persons
+            $expr: {
+              $lte: [
+                { $add: ["$totalSoldTickets", metaPersons] },
+                "$no_of_persons",
+              ],
+            },
+          },
+          { $inc: { totalSoldTickets: metaPersons } }
+        );
 
-          // 2) Issue tickets
-          await Ticket.create(
-            [
-              {
-                userId: payment.userId,
-                eventId: payment.eventId,
-                paymentId: payment._id,
-                quantity: qty,
-                no_of_persons: metaPersons,
-                attendees: metaAttendees,
-                status: "CONFIRMED",
-                isFree: false,
-              },
-            ],
-            { session }
-          );
-
-          // 3) mark finalized so repeated webhooks don't double-issue
+        if (eventUpdate.modifiedCount === 0) {
+          // Capacity exceeded OR event inactive/past → mark failed
           await Payment.updateOne(
             { _id: payment._id },
-            { "meta.finalized": true },
-            { session }
+            {
+              $set: {
+                status: "failed",
+                "meta.failReason": "capacity_or_ineligible_event",
+              },
+            }
           );
-        });
+          break;
+        }
+
+        // Issue tickets (no transaction, but safe because seats were already reserved atomically)
+        await Ticket.create([
+          {
+            userId: payment.userId,
+            eventId: payment.eventId,
+            paymentId: payment._id,
+            quantity: qty,
+            no_of_persons: metaPersons,
+            attendees: metaAttendees,
+            status: "CONFIRMED",
+            isFree: false,
+          },
+        ]);
+
+        // Mark finalized so duplicate webhooks won't double-issue
+        await Payment.updateOne(
+          { _id: payment._id },
+          { $set: { "meta.finalized": true } }
+        );
 
         break;
       }
