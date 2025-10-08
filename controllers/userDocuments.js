@@ -49,9 +49,28 @@ export const uploadUserDocuments = async (req, res) => {
     const { images, others } = splitAttachments(rawFiles);
     const role = user?.isAdmin ? "admin" : "user";
 
+    // Helper: mark pending everywhere
+    const markPending = async (doc) => {
+      doc.status = "PENDING";
+      // Use the SAME canonical key on the document, too (optional, if you track it here)
+      doc.isKYCVerified = false;
+      // Also mark user as not verified (canonical key)
+      // doc.userId.KYC_Verified = false;
+
+      // 2) User-level flag — works whether userId is populated or just an ObjectId
+      const uid = doc.userId && doc.userId._id ? doc.userId._id : doc.userId;
+
+      // CHANGE THIS to your real user flag name
+      const userUpdate = User.updateOne(
+        { _id: uid },
+        { $set: { KYC_Verified: false } }
+      );
+      await Promise.all([doc.save(), userUpdate]);
+    };
     // Append message to existing document thread
     if (docId) {
-      const doc = await UserDocument.findById(docId);
+      const doc = await UserDocument.findById(docId).populate("userId");
+
       if (!doc)
         return res
           .status(404)
@@ -73,12 +92,9 @@ export const uploadUserDocuments = async (req, res) => {
             .map(mapAttachment)
             .map((u) => ({ ...u, verification: { status: "PENDING" } }))
         );
-        doc.status = "PENDING";
       }
-      // update meta/unreads
-      doc.touchMessageMeta(role);
-
-      await doc.save();
+      // mark everything pending + set user.isKYCVerified=false (canonical)
+      await markPending(doc);
       return res
         .status(200)
         .json({ success: true, mode: "message_appended", data: doc });

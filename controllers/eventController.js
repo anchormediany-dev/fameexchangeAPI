@@ -302,8 +302,16 @@ export const createEvent = async (req, res) => {
         .json({ success: false, error: "Admin Access Required" });
 
     // required
-    const { datetime, title, summary, details, status, category, location } =
-      req.body;
+    const {
+      datetime,
+      title,
+      summary,
+      details,
+      status,
+      category,
+      location,
+      event_type,
+    } = req.body;
     const missing = [
       "datetime",
       "title",
@@ -461,6 +469,78 @@ export const createEvent = async (req, res) => {
         ? JSON.parse(req.body.talent)
         : String(req.body.talent).split(",");
       doc.talent = [...new Set(t.map((x) => String(x).trim()).filter(Boolean))];
+    }
+    if (req.body.event_type) {
+      // --- event_type: parse & validate ---
+      const ALLOWED = new Set(["live", "virtual"]);
+      const rawET = req.body.event_type;
+
+      let etArr = [];
+      if (Array.isArray(rawET)) {
+        const joined = rawET.join("").trim(); // handles ['["live"', '"virtual"]']
+        etArr =
+          joined.startsWith("[") && joined.endsWith("]")
+            ? JSON.parse(joined)
+            : rawET;
+      } else if (typeof rawET === "string") {
+        const s = rawET.trim();
+        etArr =
+          s.startsWith("[") && s.endsWith("]") ? JSON.parse(s) : s.split(",");
+      }
+
+      const eventType = Array.from(
+        new Set(
+          (etArr || [])
+            .map((x) =>
+              String(x)
+                .replace(/^\[|\]$/g, "")
+                .replace(/"/g, "")
+                .trim()
+                .toLowerCase()
+            )
+            .filter(Boolean)
+        )
+      );
+
+      if (!eventType.length || eventType.some((v) => !ALLOWED.has(v))) {
+        return res.status(400).json({
+          success: false,
+          error: 'event_type must be "live" or "virtual"',
+        });
+      }
+
+      // --- prefrences: always build & ensure at least one row ---
+      let prefrences = [];
+      try {
+        const rawPrefs = req.body.prefrences;
+        const arr = Array.isArray(rawPrefs)
+          ? rawPrefs
+          : rawPrefs
+          ? JSON.parse(rawPrefs) // expects [{users, prefrence_Type}, ...]
+          : [];
+
+        prefrences = arr.map((p) => ({
+          users: p.users, // must be a valid ObjectId
+          prefrence_Type: p.prefrence_Type || "",
+          event_type: eventType, // << required by your sub-schema
+        }));
+      } catch (e) {
+        // ignore and fallback below
+      }
+
+      // Fallback/default if empty or missing
+      if (!Array.isArray(prefrences) || prefrences.length === 0) {
+        prefrences = [
+          {
+            users: user._id,
+            prefrence_Type: "",
+            event_type: eventType,
+          },
+        ];
+      }
+
+      // attach before saving
+      doc.prefrences = prefrences;
     }
 
     // only pass defined keys to avoid saving undefined

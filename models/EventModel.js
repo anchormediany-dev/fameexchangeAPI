@@ -4,10 +4,10 @@ const prefrences = new mongoose.Schema({
   users: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   prefrence_Type: {
     type: String,
-    enum: ["interested", "notinterested", "attending"],
+    enum: ["interested", "notinterested", "attending", ""],
     default: "",
   },
-  event_type: { type: String, enum: ["live", "virtual"], required: true },
+  event_type: { type: [String], enum: ["live", "virtual"], required: true },
 });
 const DiscountSchema = new mongoose.Schema({
   discount_percent: { type: Number, min: 0, max: 100 },
