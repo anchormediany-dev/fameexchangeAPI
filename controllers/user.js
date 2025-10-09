@@ -566,7 +566,7 @@ export const getTalentOverview = async (req, res) => {
     });
   } catch (err) {
     console.error("getTalentOverview error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: err });
   }
 };
 
