@@ -422,7 +422,7 @@ export const getTalentOverview = async (req, res) => {
       facebook_login_id: 0,
       __v: 0,
     };
-    const publicUserProjection = "name full_name email role images stage_name";
+    const publicUserProjection = "name full_name email role images";
 
     // --- Base queries (profile/sessions/confirmations) ---
     const profileQ = User.findById(talentId)
@@ -515,7 +515,7 @@ export const getTalentOverview = async (req, res) => {
     //  - prefrences[].users: ObjectId with prefrence_Type ('attending' etc.)
     const talentIdStr = String(talentId);
     const possibleTalentTags = [talentIdStr];
-    if (profile?.stage_name) possibleTalentTags.push(profile.stage_name);
+    // if (profile?.stage_name) possibleTalentTags.push(profile.stage_name);
 
     const events = await eventModel
       .find({
