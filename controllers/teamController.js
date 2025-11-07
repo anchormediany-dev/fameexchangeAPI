@@ -26,7 +26,7 @@ export const listTeam = async (_req, res) => {
   }
 };
 
-const toPublicUrl = (filename) => `/uploads/${filename}`;
+const toPublicUrl = (filename) => `/${filename}`;
 const toAbsPath = (publicUrl) => {
   // publicUrl like: /uploads/team/xxx.png  -> absolute path on disk
   const rel = publicUrl.startsWith("/") ? publicUrl.slice(1) : publicUrl;
