@@ -11,6 +11,9 @@ const FaqSchema = new Schema(
       minlength: [3, "Question must be at least 3 characters"],
       maxlength: [500, "Question must be at most 500 characters"],
     },
+    type: {
+      type: String,
+    },
     answer: {
       type: String,
       required: [true, "Answer is required"],
