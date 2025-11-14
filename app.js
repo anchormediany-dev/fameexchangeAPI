@@ -26,6 +26,7 @@ import teamRoutes from "./routes/teamRoutes.js";
 import faqRoutes from "./routes/faqRoutes.js";
 import sponsorshipRoutes from "./routes/sponsorshipRoutes.js";
 import billingRoutes from "./routes/billingRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -75,6 +76,9 @@ app.use("/api/billing", billingRoutes);
 
 // sponsorship routes
 app.use("/api/sponsorships", sponsorshipRoutes);
+
+// product routes
+app.use("/api/products", productRoutes);
 
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint

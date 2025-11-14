@@ -33,17 +33,6 @@ const toAbsPath = (publicUrl) => {
   return path.join(process.cwd(), rel);
 };
 
-const parseBool = (v, fallback = true) => {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "string")
-    return ["true", "1", "yes", "on"].includes(v.toLowerCase());
-  return fallback;
-};
-const parseNum = (v, fallback = 0) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-};
-
 // ADMIN: create
 export const createTeam = async (req, res) => {
   try {

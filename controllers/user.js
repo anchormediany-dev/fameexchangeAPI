@@ -183,8 +183,8 @@ export const getAllUsers = async (req, res) => {
           usertype: 1,
           is_active: 1,
           role: 1,
-          image: 1,
-
+          images: 1,
+          isDeleted: 1,
           created_at: "$createdAt",
         },
       },
@@ -326,7 +326,7 @@ export const deleteUserById = async (req, res) => {
   try {
     const result = await User.updateOne(
       { _id: req.params.id },
-      { $set: { is_active: false } }
+      { $set: { is_active: false, isDeleted: true } }
     );
 
     if (result.modifiedCount === 0) {
