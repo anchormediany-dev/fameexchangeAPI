@@ -13,8 +13,28 @@ export const createSession = async (req, res) => {
       bufferTime,
       timeZone,
       where,
-      accessType,
+      accessType, // expects array of { type, price }
     } = req.body;
+
+    // Validate accessType array
+    if (!Array.isArray(accessType) || accessType.length === 0) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "accessType must be a non-empty array",
+        });
+    }
+    for (const item of accessType) {
+      if (!item.type || typeof item.price !== "number") {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Each accessType must have a type and price",
+          });
+      }
+    }
 
     const session = new Session({
       sessionLength,
@@ -141,6 +161,59 @@ export const updateSessionStatus = async (req, res) => {
     const session = await Session.findOneAndUpdate(
       { _id: req.params.id, createdBy: req.user._id },
       { isActive },
+      { new: true }
+    );
+
+    if (!session)
+      return res
+        .status(404)
+        .json({ success: false, message: "Session not found" });
+
+    res.status(200).json({ success: true, session });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc Update session
+export const updateSession = async (req, res) => {
+  try {
+    const {
+      sessionLength,
+      price,
+      sessionDate,
+      sessionTime,
+      bufferTime,
+      timeZone,
+      where,
+      accessType, // expects array of { type, price }
+    } = req.body;
+
+    const updateFields = {};
+    if (sessionLength) updateFields.sessionLength = sessionLength;
+    if (typeof price === "number") updateFields.price = price;
+    if (sessionDate) updateFields.sessionDate = sessionDate;
+    if (sessionTime) updateFields.sessionTime = sessionTime;
+    if (bufferTime) updateFields.bufferTime = bufferTime;
+    if (timeZone) updateFields.timeZone = timeZone;
+    if (where) updateFields.where = where;
+    if (Array.isArray(accessType)) {
+      for (const item of accessType) {
+        if (!item.type || typeof item.price !== "number") {
+          return res
+            .status(400)
+            .json({
+              success: false,
+              message: "Each accessType must have a type and price",
+            });
+        }
+      }
+      updateFields.accessType = accessType;
+    }
+
+    const session = await Session.findOneAndUpdate(
+      { _id: req.params.id, createdBy: req.user._id },
+      updateFields,
       { new: true }
     );
 

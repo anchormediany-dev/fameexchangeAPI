@@ -1,5 +1,11 @@
 import Product from "../models/productModel.js";
 import mongoose from "mongoose";
+import Stripe from "stripe";
+import Payment from "../models/paymentModel.js";
+import dotenv from "dotenv";
+dotenv.config();
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // CREATE - Add new product
 export const createProduct = async (req, res) => {
@@ -215,4 +221,139 @@ export const deleteProduct = async (req, res) => {
       details: error.message,
     });
   }
+};
+
+// Create Stripe PaymentIntent for product purchase
+export const createProductPaymentIntent = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+    const {
+      productId,
+      quantity = 1,
+      currency = "usd",
+      customerId,
+      billingAddress = {}, // { name, line1, line2, city, state, zip, country }
+    } = req.body;
+    if (!productId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing productId" });
+    }
+    const product = await Product.findById(productId).lean();
+    if (!product || !product.isActive) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Product not found or inactive" });
+    }
+    const unitPrice = product.price;
+    const amount = unitPrice * quantity;
+    const amountInMinor = Math.round(amount * 100); // Stripe expects cents
+    if (amountInMinor < 50) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Amount too small" });
+    }
+    // Create Stripe PaymentIntent
+    const pi = await stripe.paymentIntents.create({
+      amount: amountInMinor,
+      currency,
+      ...(customerId ? { customer: customerId } : {}),
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      metadata: {
+        productId: String(product._id),
+        userId: String(userId),
+        quantity: String(quantity),
+        unitPrice: String(unitPrice),
+        ...(billingAddress && typeof billingAddress === "object"
+          ? {
+              billing_name: billingAddress.name || "",
+              billing_line1: billingAddress.line1 || "",
+              billing_line2: billingAddress.line2 || "",
+              billing_city: billingAddress.city || "",
+              billing_state: billingAddress.state || "",
+              billing_zip: billingAddress.zip || "",
+              billing_country: billingAddress.country || "",
+            }
+          : {}),
+      },
+    });
+    // Upsert a local Payment record
+    await Payment.findOneAndUpdate(
+      { stripePaymentIntentId: pi.id },
+      {
+        userId,
+        type: "product",
+        quantity,
+        currency,
+        unitPrice,
+        amount,
+        amountInMinor,
+        stripePaymentIntentId: pi.id,
+        status: pi.status,
+        meta: {
+          title: product.title,
+          image: product.image,
+          billingAddress: billingAddress || {},
+        },
+      },
+      { upsert: true, new: true }
+    );
+    res.json({
+      success: true,
+      productId: String(product._id),
+      paymentIntent: pi,
+      amount,
+      amountInMinor,
+      currency,
+      title: product.title,
+      image: product.image,
+      billingAddress: billingAddress || {},
+    });
+  } catch (err) {
+    console.error("Stripe payment intent error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// Stripe webhook for product payments (no signature verification)
+export const stripeProductWebhookNoSig = async (req, res) => {
+  const event = req.body;
+  // Handle payment_intent events
+  if (
+    event.type === "payment_intent.succeeded" ||
+    event.type === "payment_intent.payment_failed" ||
+    event.type === "payment_intent.canceled"
+  ) {
+    const pi = event.data;
+    console.log("Received Stripe webhook for PaymentIntent:", pi);
+    // if (!pi?.id) break;
+    const status = pi.status;
+    const paymentIntentId = pi.id;
+    // Extract billing address from metadata if present
+    const billingAddress = {
+      name: pi.metadata?.billing_name || "",
+      line1: pi.metadata?.billing_line1 || "",
+      line2: pi.metadata?.billing_line2 || "",
+      city: pi.metadata?.billing_city || "",
+      state: pi.metadata?.billing_state || "",
+      zip: pi.metadata?.billing_zip || "",
+      country: pi.metadata?.billing_country || "",
+    };
+    await Payment.findOneAndUpdate(
+      { stripePaymentIntentId: paymentIntentId },
+      {
+        status,
+        meta: {
+          ...(pi.metadata || {}),
+          billingAddress,
+        },
+        paidAt: status === "succeeded" ? new Date() : undefined,
+      },
+      { new: true }
+    );
+  }
+  res.json({ received: true });
 };

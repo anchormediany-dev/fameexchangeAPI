@@ -8,10 +8,10 @@ const sessionSchema = new mongoose.Schema(
       enum: ["15", "30", "45", "60"],
       required: true,
     },
-    price: {
-      type: Number,
-      required: true,
-    },
+    // price: {
+    //   type: Number,
+    //   required: true,
+    // },
     sessionDate: {
       type: String, // e.g. "2025-08-15"
       required: true,
@@ -32,11 +32,19 @@ const sessionSchema = new mongoose.Schema(
     where: {
       type: String,
     },
-    accessType: {
-      type: String,
-      enum: ["onsite", "online"],
-      required: true,
-    },
+    accessType: [
+      {
+        type: {
+          type: String,
+          enum: ["Metaverse", "Virtual", "Facetime", "Hologram"],
+          required: true,
+        },
+        price: {
+          type: Number,
+          required: true,
+        },
+      },
+    ],
     isActive: {
       type: Boolean,
       default: true,

@@ -432,12 +432,26 @@ export const stripeWebhook = async (req, res, next) => {
 export async function createSessionPayment({
   user,
   session,
-
   quantity = 1,
   meta = {},
 }) {
+  // Helper to get total price for selected accessTypes
+  function getTotalAccessTypePrice(session) {
+    if (!Array.isArray(session.accessType)) return 0;
+    // Only sum prices for accessType objects that exist and have a valid price
+    return session.accessType.reduce((sum, item) => {
+      if (typeof item.price === "number" && item.price > 0) {
+        return sum + item.price;
+      }
+      return sum;
+    }, 0);
+  }
+
   const currency = (session.currency || "usd").toLowerCase();
-  const unitPrice = Number(session.price ?? 0);
+  const unitPrice = getTotalAccessTypePrice(session);
+  if (typeof unitPrice !== "number" || unitPrice <= 0) {
+    throw new Error("Invalid or missing accessType price.");
+  }
   const qty = Math.max(1, Number(quantity));
   const amount = unitPrice * qty; // major units
   const amountInMinor = toMinorUnits(amount, currency);
@@ -476,7 +490,7 @@ export async function createSessionPayment({
     provider: "stripe",
     stripePaymentIntentId: paymentIntent.id,
     status: paymentIntent.status,
-    meta, // keep any useful references (fanRequestId, talentName, date/time, etc.)
+    meta,
   });
 
   return {

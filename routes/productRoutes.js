@@ -5,6 +5,8 @@ import {
   getProductById,
   updateProduct,
   deleteProduct,
+  createProductPaymentIntent,
+  stripeProductWebhookNoSig,
 } from "../controllers/productController.js";
 import auth_key_header from "../middleware/auth_key_header.js";
 import auth_token from "../middleware/auth_token.js";
@@ -21,6 +23,15 @@ router.post(
   auth_admin,
   createProduct
 );
+// STRIPE - Create payment intent for product purchase
+router.post(
+  "/payment-intent",
+  auth_key_header,
+  auth_token,
+  createProductPaymentIntent
+);
+// STRIPE - Create payment intent for product purchase
+router.post("/webhook", auth_key_header, auth_token, stripeProductWebhookNoSig);
 
 // READ - Get all products (with pagination and search)
 router.get("/", auth_key_header, getAllProducts);

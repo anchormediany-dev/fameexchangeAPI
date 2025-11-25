@@ -16,6 +16,10 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Session",
     },
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+    },
     // NEW: categorize payments
     type: { type: String, enum: ["session", "event"], required: true },
     quantity: { type: Number, default: 1 },
