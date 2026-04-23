@@ -1,0 +1,370 @@
+import Talent from "../models/talentModel.js";
+import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
+import TalentMarketStats from "../models/talentMarketStatsModel.js";
+import { getQuote, getTalentChart, getTalentStats } from "../services/tradingService.js";
+import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
+import mongoose from "mongoose";
+
+const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
+
+function calcBidAsk(currentPrice, spread) {
+  const p = parseFloat(currentPrice?.toString?.() ?? currentPrice);
+  const s = parseFloat(spread?.toString?.() ?? spread);
+  return {
+    bid: +(p - s / 2).toFixed(4),
+    ask: +(p + s / 2).toFixed(4),
+  };
+}
+
+// ── Public ──────────────────────────────────────────────────────────
+
+// GET /api/talents
+export const getAllTalents = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const filter = { status: "active" };
+    if (req.query.search) {
+      filter.$or = [
+        { name: { $regex: req.query.search, $options: "i" } },
+        { symbol: { $regex: req.query.search, $options: "i" } },
+      ];
+    }
+
+    const [talents, total] = await Promise.all([
+      Talent.find(filter)
+        .select("-liquidity_factor -volatility_multiplier -max_move_per_trade -max_daily_move_percent")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Talent.countDocuments(filter),
+    ]);
+
+    const items = talents.map((t) => {
+      const currentPrice = parseFloat(t.current_price.toString());
+      const prevClose = parseFloat((t.previous_close_price || t.current_price).toString());
+      const change = +(currentPrice - prevClose).toFixed(4);
+      const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+
+      return {
+        _id: t._id,
+        name: t.name,
+        slug: t.slug,
+        symbol: t.symbol,
+        image: t.image,
+        current_price: currentPrice,
+        bid_price: parseFloat(t.bid_price.toString()),
+        ask_price: parseFloat(t.ask_price.toString()),
+        change_amount: change,
+        change_percent: changePct,
+        last_trade_at: t.last_trade_at,
+      };
+    });
+
+    res.json({
+      success: true,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalItems: total,
+      talents: items,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/top
+export const getTopTalents = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const sortBy = req.query.sort || "price"; // price | volume | gainers | losers
+
+    const talents = await Talent.find({ status: "active" }).lean();
+
+    let items = talents.map((t) => {
+      const currentPrice = parseFloat(t.current_price.toString());
+      const prevClose = parseFloat((t.previous_close_price || t.current_price).toString());
+      const change = +(currentPrice - prevClose).toFixed(4);
+      const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+
+      return {
+        _id: t._id,
+        name: t.name,
+        slug: t.slug,
+        symbol: t.symbol,
+        image: t.image,
+        description: t.description,
+        current_price: currentPrice,
+        bid_price: parseFloat(t.bid_price.toString()),
+        ask_price: parseFloat(t.ask_price.toString()),
+        spread: parseFloat(t.spread.toString()),
+        min_price: parseFloat(t.min_price.toString()),
+        max_price: parseFloat(t.max_price.toString()),
+        change_amount: change,
+        change_percent: changePct,
+        last_trade_at: t.last_trade_at,
+        userId: t.userId,
+      };
+    });
+
+    switch (sortBy) {
+      case "gainers":
+        items.sort((a, b) => b.change_percent - a.change_percent);
+        break;
+      case "losers":
+        items.sort((a, b) => a.change_percent - b.change_percent);
+        break;
+      case "price":
+      default:
+        items.sort((a, b) => b.current_price - a.current_price);
+        break;
+    }
+
+    items = items.slice(0, limit);
+
+    res.json({ success: true, talents: items });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/:id
+export const getTalentById = async (req, res) => {
+  try {
+    const talent = await Talent.findById(req.params.id)
+      .populate("userId", "name email images role")
+      .lean();
+    if (!talent) return res.status(404).json({ success: false, message: "Talent not found" });
+
+    const currentPrice = parseFloat(talent.current_price.toString());
+    const prevClose = parseFloat((talent.previous_close_price || talent.current_price).toString());
+    const change = +(currentPrice - prevClose).toFixed(4);
+    const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+
+    // Get market stats
+    const marketStats = await TalentMarketStats.findOne({ talent_id: talent._id }).lean();
+
+    const result = {
+      _id: talent._id,
+      name: talent.name,
+      slug: talent.slug,
+      symbol: talent.symbol,
+      image: talent.image,
+      description: talent.description,
+      status: talent.status,
+      current_price: currentPrice,
+      bid_price: parseFloat(talent.bid_price.toString()),
+      ask_price: parseFloat(talent.ask_price.toString()),
+      spread: parseFloat(talent.spread.toString()),
+      min_price: parseFloat(talent.min_price.toString()),
+      max_price: parseFloat(talent.max_price.toString()),
+      change_amount: change,
+      change_percent: changePct,
+      last_trade_at: talent.last_trade_at,
+      userId: talent.userId,
+      volume_24h: marketStats ? parseFloat(marketStats.volume_24h.toString()) : 0,
+      high_24h: marketStats ? parseFloat(marketStats.high_24h.toString()) : currentPrice,
+      low_24h: marketStats ? parseFloat(marketStats.low_24h.toString()) : currentPrice,
+    };
+
+    res.json({ success: true, talent: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/:id/quote
+export const getTalentQuote = async (req, res) => {
+  try {
+    const quote = await getQuote(req.params.id);
+    res.json({ success: true, quote });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/:id/chart?range=1D|1W|1M|3M|1Y|5Y|10Y
+export const getTalentChartData = async (req, res) => {
+  try {
+    const range = req.query.range || "1D";
+    const data = await getTalentChart(req.params.id, range);
+    res.json({ success: true, range, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/:id/stats
+export const getTalentStatistics = async (req, res) => {
+  try {
+    const stats = await getTalentStats(req.params.id);
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── Admin ───────────────────────────────────────────────────────────
+
+// POST /api/admin/talents
+export const createTalent = async (req, res) => {
+  try {
+    const data = createTalentSchema.parse(req.body);
+
+    const { bid, ask } = calcBidAsk(data.current_price, data.spread || 0.5);
+
+    const talent = await Talent.create({
+      ...data,
+      bid_price: D128(bid),
+      ask_price: D128(ask),
+      current_price: D128(data.current_price),
+      previous_close_price: D128(data.current_price),
+      spread: D128(data.spread || 0.5),
+      liquidity_factor: D128(data.liquidity_factor || 50000),
+      volatility_multiplier: D128(data.volatility_multiplier || 1.0),
+      min_price: D128(data.min_price || 1.0),
+      max_price: D128(data.max_price || 100000),
+      max_move_per_trade: D128(data.max_move_per_trade || 5.0),
+      min_order_amount: D128(data.min_order_amount || 10),
+      max_order_amount: D128(data.max_order_amount || 100000),
+    });
+
+    // Write initial price history
+    await TalentPriceHistory.create({
+      talent_id: talent._id,
+      price: D128(data.current_price),
+      bid_price: D128(bid),
+      ask_price: D128(ask),
+      volume: D128(0),
+      source_type: "system",
+      recorded_at: new Date(),
+    });
+
+    res.status(201).json({ success: true, talent: talent.toDisplay() });
+  } catch (err) {
+    const error = err.errors?.[0]?.message || err.message;
+    res.status(400).json({ success: false, message: error });
+  }
+};
+
+// PUT /api/admin/talents/:id
+export const updateTalent = async (req, res) => {
+  try {
+    const data = updateTalentSchema.parse(req.body);
+
+    // Convert numeric fields to Decimal128
+    const update = {};
+    for (const [key, val] of Object.entries(data)) {
+      const decimalFields = [
+        "current_price", "spread", "liquidity_factor", "volatility_multiplier",
+        "min_price", "max_price", "max_move_per_trade", "min_order_amount", "max_order_amount",
+      ];
+      update[key] = decimalFields.includes(key) ? D128(val) : val;
+    }
+
+    // Recalc bid/ask if price or spread changed
+    if (data.current_price || data.spread) {
+      const talent = await Talent.findById(req.params.id);
+      if (!talent) return res.status(404).json({ success: false, message: "Talent not found" });
+
+      const price = data.current_price || parseFloat(talent.current_price.toString());
+      const spread = data.spread || parseFloat(talent.spread.toString());
+      const { bid, ask } = calcBidAsk(price, spread);
+      update.bid_price = D128(bid);
+      update.ask_price = D128(ask);
+    }
+
+    const talent = await Talent.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!talent) return res.status(404).json({ success: false, message: "Talent not found" });
+
+    res.json({ success: true, talent: talent.toDisplay() });
+  } catch (err) {
+    const error = err.errors?.[0]?.message || err.message;
+    res.status(400).json({ success: false, message: error });
+  }
+};
+
+// POST /api/admin/talents/:id/adjust-price
+export const adjustTalentPrice = async (req, res) => {
+  try {
+    const data = adjustPriceSchema.parse(req.body);
+
+    const talent = await Talent.findById(req.params.id);
+    if (!talent) return res.status(404).json({ success: false, message: "Talent not found" });
+
+    const oldPrice = parseFloat(talent.current_price.toString());
+    const newPrice = data.new_price;
+    const spread = parseFloat(talent.spread.toString());
+    const { bid, ask } = calcBidAsk(newPrice, spread);
+
+    talent.current_price = D128(newPrice);
+    talent.bid_price = D128(bid);
+    talent.ask_price = D128(ask);
+    await talent.save();
+
+    // Log to price history
+    await TalentPriceHistory.create({
+      talent_id: talent._id,
+      price: D128(newPrice),
+      bid_price: D128(bid),
+      ask_price: D128(ask),
+      volume: D128(0),
+      source_type: "admin_adjustment",
+      recorded_at: new Date(),
+    });
+
+    res.json({
+      success: true,
+      old_price: oldPrice,
+      new_price: newPrice,
+      talent: talent.toDisplay(),
+    });
+  } catch (err) {
+    const error = err.errors?.[0]?.message || err.message;
+    res.status(400).json({ success: false, message: error });
+  }
+};
+
+// GET /api/admin/market/logs
+export const getMarketLogs = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (req.query.talent_id) filter.talent_id = req.query.talent_id;
+    if (req.query.source_type) filter.source_type = req.query.source_type;
+
+    const [logs, total] = await Promise.all([
+      TalentPriceHistory.find(filter)
+        .populate("talent_id", "name symbol")
+        .sort({ recorded_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      TalentPriceHistory.countDocuments(filter),
+    ]);
+
+    const items = logs.map((l) => ({
+      ...l,
+      price: parseFloat(l.price.toString()),
+      bid_price: parseFloat(l.bid_price.toString()),
+      ask_price: parseFloat(l.ask_price.toString()),
+      volume: parseFloat(l.volume.toString()),
+    }));
+
+    res.json({
+      success: true,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalItems: total,
+      items,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

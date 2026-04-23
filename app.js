@@ -27,6 +27,11 @@ import faqRoutes from "./routes/faqRoutes.js";
 import sponsorshipRoutes from "./routes/sponsorshipRoutes.js";
 import billingRoutes from "./routes/billingRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
+import talentTradingRoutes from "./routes/talentRoutes.js";
+import tradeRoutes from "./routes/tradeRoutes.js";
+import positionRoutes from "./routes/positionRoutes.js";
+import walletRoutes from "./routes/walletRoutes.js";
+import adminTradingRoutes from "./routes/adminTradingRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 
 const app = express();
@@ -79,6 +84,13 @@ app.use("/api/sponsorships", sponsorshipRoutes);
 
 // product routes
 app.use("/api/products", productRoutes);
+
+// trading system routes
+app.use("/api/talents", talentTradingRoutes);
+app.use("/api/trades", tradeRoutes);
+app.use("/api/positions", positionRoutes);
+app.use("/api/wallet", walletRoutes);
+app.use("/api/admin", adminTradingRoutes);
 
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
