@@ -7,6 +7,7 @@ import Wallet from "../models/walletModel.js";
 import WalletTransaction from "../models/walletTransactionModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
+import { resolveTalent } from "./talentResolver.js";
 
 const d = (v) => parseFloat(v?.toString?.() ?? v ?? 0);
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
@@ -61,7 +62,7 @@ function enforceDailyLimit(newPrice, previousClose, maxDailyPct) {
 
 // ── Quote ───────────────────────────────────────────────────────────
 export async function getQuote(talentId) {
-  const talent = await Talent.findById(talentId);
+  const talent = await resolveTalent(talentId);
   if (!talent) throw new Error("Talent not found");
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
 
@@ -79,7 +80,7 @@ export async function getQuote(talentId) {
 
 // ── Preview ─────────────────────────────────────────────────────────
 export async function previewTrade(userId, talentId, side, amount) {
-  const talent = await Talent.findById(talentId);
+  const talent = await resolveTalent(talentId);
   if (!talent) throw new Error("Talent not found");
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
 
@@ -94,6 +95,7 @@ export async function previewTrade(userId, talentId, side, amount) {
 
   return {
     talent_id: talent._id,
+    resolved_talent_id: talent._id,
     side,
     entry_price: entryPrice,
     estimated_units: units,
@@ -121,10 +123,13 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
   session.startTransaction();
 
   try {
-    // Step 1 – Load talent
-    const talent = await Talent.findById(talentId).session(session);
+    // Step 1 – Load talent (accept Talent._id or User._id)
+    const resolved = await resolveTalent(talentId);
+    if (!resolved) throw new Error("Talent not found");
+    const talent = await Talent.findById(resolved._id).session(session);
     if (!talent) throw new Error("Talent not found");
     if (talent.status !== "active") throw new Error("Talent is not active for trading");
+    talentId = talent._id;
 
     // Step 2 – Validate order size
     const minOrder = d(talent.min_order_amount);
@@ -482,6 +487,10 @@ export async function closeTrade(positionId, userId) {
 
 // ── Statistics / chart data ─────────────────────────────────────────
 export async function getTalentChart(talentId, range) {
+  const resolved = await resolveTalent(talentId);
+  if (!resolved) throw new Error("Talent not found");
+  talentId = resolved._id;
+
   const now = new Date();
   let start;
 
@@ -528,8 +537,9 @@ export async function getTalentChart(talentId, range) {
 }
 
 export async function getTalentStats(talentId) {
-  const talent = await Talent.findById(talentId);
+  const talent = await resolveTalent(talentId);
   if (!talent) throw new Error("Talent not found");
+  talentId = talent._id;
 
   const now = new Date();
   const ranges = {

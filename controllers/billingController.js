@@ -5,6 +5,10 @@ import mongoose from "mongoose";
 import Event from "../models/eventModel.js";
 import Payment from "../models/paymentModel.js";
 import Ticket from "../models/ticketModel.js";
+import Session from "../models/sessionModel.js";
+import FanInverseRequest from "../models/fanInverseRequestModel.js";
+import User from "../models/user.js";
+import Notification from "../models/notificationModel.js";
 import {
   calcUnitPriceFromEvent,
   getDiscountPercentFromEvent,
@@ -499,6 +503,261 @@ export async function createSessionPayment({
     clientSecret: paymentIntent.client_secret,
   };
 }
+
+// ============================================================================
+// Inverse Session Checkout (frontend "fast checkout" for inverse bookings)
+// ============================================================================
+
+function getSessionUnitPrice(session) {
+  if (!Array.isArray(session?.accessType)) return 0;
+  return session.accessType.reduce((sum, item) => {
+    const p = Number(item?.price);
+    return p > 0 ? sum + p : sum;
+  }, 0);
+}
+
+// POST /api/billing/inverse-session/payment-intent
+// Body: { sessionId, talentId, currency?, fanRequestId? }
+// Returns: { clientSecret, paymentIntentId, amount, amountInMinor, currency }
+export const createInverseSessionPaymentIntent = async (req, res, next) => {
+  try {
+    assert(req.user?._id, "Unauthorized", 401);
+
+    const { sessionId, talentId, currency: cIn, fanRequestId } = req.body || {};
+    assert(sessionId, "Missing sessionId");
+    assert(talentId, "Missing talentId");
+    assert(mongoose.Types.ObjectId.isValid(sessionId), "Invalid sessionId");
+    assert(mongoose.Types.ObjectId.isValid(talentId), "Invalid talentId");
+
+    const session = await Session.findById(sessionId).lean();
+    assert(session, "Session not found", 404);
+    assert(session.isActive !== false, "Session is not active", 400);
+
+    const talent = await User.findById(talentId).lean();
+    assert(talent, "Talent not found", 404);
+
+    const currency = String(cIn || session.currency || "usd").toLowerCase();
+    const unitPrice = getSessionUnitPrice(session);
+    assert(unitPrice > 0, "Session has no priced access types", 400);
+
+    const amount = Number(unitPrice.toFixed(2));
+    const amountInMinor = toMinorUnits(amount, currency);
+    assert(amountInMinor >= 50, "Amount too small", 400);
+
+    const customerId = await ensureStripeCustomer(
+      await User.findById(req.user._id)
+    );
+
+    const pi = await stripe.paymentIntents.create({
+      amount: amountInMinor,
+      currency,
+      customer: customerId,
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      metadata: {
+        type: "inverse_session",
+        kind: "inverse_session",
+        userId: String(req.user._id),
+        sessionId: String(session._id),
+        talentId: String(talent._id),
+        ...(fanRequestId ? { fanRequestId: String(fanRequestId) } : {}),
+      },
+    });
+
+    await Payment.findOneAndUpdate(
+      { stripePaymentIntentId: pi.id },
+      {
+        $setOnInsert: {
+          userId: req.user._id,
+          sessionId: session._id,
+          type: "session",
+          quantity: 1,
+          currency,
+          unitPrice,
+          amount,
+          amountInMinor,
+          stripePaymentIntentId: pi.id,
+        },
+        $set: {
+          status: pi.status,
+          meta: {
+            kind: "inverse_session",
+            sessionId: String(session._id),
+            talentId: String(talent._id),
+            ...(fanRequestId ? { fanRequestId: String(fanRequestId) } : {}),
+          },
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({
+      success: true,
+      paymentIntentId: pi.id,
+      clientSecret: pi.client_secret,
+      status: pi.status,
+      amount,
+      amountInMinor,
+      currency,
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ success: false, message: e.message });
+    next(e);
+  }
+};
+
+// POST /api/billing/inverse-session/confirm
+// Body: { paymentIntentId, sessionId, talentId, date, time, location?, paymentMethod? }
+// Verifies PI succeeded, idempotently creates a FanInverseRequest, returns booking.
+export const confirmInverseSessionPayment = async (req, res, next) => {
+  try {
+    assert(req.user?._id, "Unauthorized", 401);
+
+    const {
+      paymentIntentId,
+      sessionId,
+      talentId,
+      date,
+      time,
+      location,
+      paymentMethod,
+    } = req.body || {};
+
+    assert(paymentIntentId, "Missing paymentIntentId");
+
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    assert(pi, "PaymentIntent not found", 404);
+
+    if (String(pi.metadata?.userId || "") !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: "PaymentIntent does not belong to this user" });
+    }
+    if (pi.metadata?.type !== "inverse_session" && pi.metadata?.kind !== "inverse_session") {
+      return res.status(400).json({ success: false, message: "PaymentIntent is not an inverse session" });
+    }
+    if (pi.status !== "succeeded") {
+      return res.status(400).json({
+        success: false,
+        message: `PaymentIntent not yet succeeded (status: ${pi.status})`,
+        status: pi.status,
+      });
+    }
+
+    const finalSessionId = sessionId || pi.metadata?.sessionId;
+    const finalTalentId = talentId || pi.metadata?.talentId;
+    assert(finalSessionId, "Missing sessionId");
+    assert(finalTalentId, "Missing talentId");
+
+    // Reflect PI status on Payment doc
+    const payment = await Payment.findOneAndUpdate(
+      { stripePaymentIntentId: pi.id },
+      { $set: { status: pi.status, paidAt: new Date() } },
+      { new: true }
+    );
+
+    // Idempotency: if a FanInverseRequest already linked to this Payment, return it.
+    if (payment?._id) {
+      const existing = await FanInverseRequest.findOne({ paymentId: payment._id }).lean();
+      if (existing) {
+        return res.json({
+          success: true,
+          already_confirmed: true,
+          fanRequest: existing,
+          payment,
+        });
+      }
+    }
+
+    const session = await Session.findById(finalSessionId).lean();
+    assert(session, "Session not found", 404);
+
+    const talent = await User.findById(finalTalentId).lean();
+    assert(talent, "Talent not found", 404);
+
+    let bookingDate = date ? new Date(date) : null;
+    if (!bookingDate || Number.isNaN(bookingDate.getTime())) {
+      // Fall back to session's own date/time if not provided
+      bookingDate = session.sessionDate ? new Date(session.sessionDate) : new Date();
+    }
+    const bookingTime = time || session.sessionTime || "00:00";
+    const pm = paymentMethod === "Debit Card" ? "Debit Card" : "Credit Card";
+
+    const fanRequest = await FanInverseRequest.create({
+      talentName: talent.stage_name || talent.full_name || talent.name || "Talent",
+      talentId: talent._id,
+      fanId: req.user._id,
+      date: bookingDate,
+      time: bookingTime,
+      location: location || session.where || "",
+      paymentMethod: pm,
+      ispaid: true,
+      paymentStatus: "succeeded",
+      status: "accepted",
+      sessionId: session._id,
+      paymentId: payment?._id,
+    });
+
+    // Best-effort notifications (do not fail the request if notifications fail)
+    try {
+      await Notification.create({
+        userId: talent._id,
+        category: "payment",
+        description: `New paid inverse session booking from ${req.user?.name || "a fan"}.`,
+        referenceModel: "FanInverseRequest",
+        referenceId: fanRequest._id,
+      });
+      await Notification.create({
+        userId: req.user._id,
+        category: "payment",
+        description: `Your inverse session booking is confirmed.`,
+        referenceModel: "FanInverseRequest",
+        referenceId: fanRequest._id,
+      });
+    } catch (nerr) {
+      console.warn("Inverse confirm notification error:", nerr.message);
+    }
+
+    return res.json({
+      success: true,
+      already_confirmed: false,
+      fanRequest,
+      payment,
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ success: false, message: e.message });
+    next(e);
+  }
+};
+
+// GET /api/billing/inverse-session/quote?sessionId=...
+export const getInverseSessionQuote = async (req, res, next) => {
+  try {
+    const { sessionId, currency: cIn = "usd" } = req.query;
+    assert(sessionId, "Missing sessionId");
+    assert(mongoose.Types.ObjectId.isValid(sessionId), "Invalid sessionId");
+
+    const session = await Session.findById(sessionId).lean();
+    assert(session, "Session not found", 404);
+
+    const currency = String(cIn || "usd").toLowerCase();
+    const unitPrice = getSessionUnitPrice(session);
+    const amountInMinor = toMinorUnits(unitPrice, currency);
+
+    return res.json({
+      success: true,
+      sessionId,
+      currency,
+      unitPrice,
+      amount: unitPrice,
+      amountInMinor,
+      sessionLength: session.sessionLength,
+      accessType: session.accessType,
+      where: session.where,
+    });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ success: false, message: e.message });
+    next(e);
+  }
+};
+
 const ALLOWED_STATUSES = new Set([
   "requires_payment_method",
   "requires_confirmation",

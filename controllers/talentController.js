@@ -2,6 +2,7 @@ import Talent from "../models/talentModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import { getQuote, getTalentChart, getTalentStats } from "../services/tradingService.js";
+import { resolveTalent } from "../services/talentResolver.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
@@ -134,7 +135,10 @@ export const getTopTalents = async (req, res) => {
 // GET /api/talents/:id
 export const getTalentById = async (req, res) => {
   try {
-    const talent = await Talent.findById(req.params.id)
+    const resolved = await resolveTalent(req.params.id);
+    if (!resolved) return res.status(404).json({ success: false, message: "Talent not found" });
+
+    const talent = await Talent.findById(resolved._id)
       .populate("userId", "name email images role")
       .lean();
     if (!talent) return res.status(404).json({ success: false, message: "Talent not found" });

@@ -5,6 +5,8 @@ import {
   getWallet,
   getWalletTransactions,
   depositFunds,
+  createDepositIntent,
+  confirmDeposit,
 } from "../controllers/walletController.js";
 
 const router = express.Router();
@@ -13,5 +15,7 @@ const router = express.Router();
 router.get("/", auth_key_header, auth_token, getWallet);
 router.get("/transactions", auth_key_header, auth_token, getWalletTransactions);
 router.post("/deposit", auth_key_header, auth_token, depositFunds);
+router.post("/deposit-intent", auth_key_header, auth_token, createDepositIntent);
+router.post("/deposit-confirm", auth_key_header, auth_token, confirmDeposit);
 
 export default router;

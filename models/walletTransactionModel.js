@@ -18,9 +18,10 @@ const walletTransactionSchema = new mongoose.Schema(
     reference_id: { type: mongoose.Schema.Types.ObjectId, default: null },
     reference_type: {
       type: String,
-      enum: ["trade", "position", "deposit", "withdrawal", "adjustment"],
+      enum: ["trade", "position", "deposit", "withdrawal", "adjustment", "stripe_deposit"],
       default: null,
     },
+    stripe_payment_intent_id: { type: String, default: null, index: true },
   },
   { timestamps: true }
 );

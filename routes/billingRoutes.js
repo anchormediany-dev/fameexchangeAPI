@@ -8,6 +8,9 @@ import {
   stripeWebhook,
   listPlatformTransactions,
   listUserTransactions,
+  createInverseSessionPaymentIntent,
+  confirmInverseSessionPayment,
+  getInverseSessionQuote,
 } from "../controllers/billingController.js";
 import auth_token from "../middleware/auth_token.js";
 import auth_key_header from "../middleware/auth_key_header.js";
@@ -42,6 +45,26 @@ router.get(
   auth_key_header,
   auth_token,
   retrievePaymentIntent
+);
+
+// Inverse-session checkout (Stripe-funded fast booking)
+router.get(
+  "/inverse-session/quote",
+  auth_key_header,
+  auth_token,
+  getInverseSessionQuote
+);
+router.post(
+  "/inverse-session/payment-intent",
+  auth_key_header,
+  auth_token,
+  createInverseSessionPaymentIntent
+);
+router.post(
+  "/inverse-session/confirm",
+  auth_key_header,
+  auth_token,
+  confirmInverseSessionPayment
 );
 
 // webhook must receive RAW body; mount separately in server.js
