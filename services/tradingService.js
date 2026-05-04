@@ -16,14 +16,68 @@ const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 const FEE_RATE = 0.005; // 0.5%
 const QUOTE_EXPIRY_SECONDS = 10;
 
+// Dynamic bid/ask spread configuration.
+// The spread scales with the talent's price so each talent quotes its own bid/ask.
+// `MIN_SPREAD` is the floor used when a talent has no price data yet.
+const SPREAD_PERCENT = 0.005; // 0.5% of current price
+const MIN_SPREAD = 0.01;
+
 // ── Price helpers ───────────────────────────────────────────────────
+// `storedSpread` is kept for backward-compatibility with the persisted field but
+// the effective spread is always derived from the live price so bid/ask reflect
+// the value of THIS talent (not a flat default shared by all of them).
+function effectiveSpread(currentPrice, storedSpread) {
+  const p = d(currentPrice);
+  const dynamic = Math.max(MIN_SPREAD, +(p * SPREAD_PERCENT).toFixed(4));
+  const stored = d(storedSpread);
+  // If an admin has explicitly set a spread > the dynamic value, honor it.
+  return stored > dynamic ? stored : dynamic;
+}
+
 function calcBidAsk(currentPrice, spread) {
   const p = d(currentPrice);
-  const s = d(spread);
+  const s = effectiveSpread(p, spread);
   return {
     bid: +(p - s / 2).toFixed(4),
     ask: +(p + s / 2).toFixed(4),
   };
+}
+
+export { calcBidAsk, effectiveSpread };
+
+// ── Optional transaction helper ─────────────────────────────────────
+// MongoDB multi-document transactions require a replica set / mongos.
+// Standalone dev installs throw "transaction numbers are only allowed on a
+// replica set member or mongos". This helper tries a transaction first and
+// transparently falls back to a non-transactional run when unsupported.
+async function withOptionalTransaction(fn) {
+  let session;
+  try {
+    session = await mongoose.startSession();
+  } catch {
+    return await fn(null);
+  }
+  try {
+    session.startTransaction();
+    const result = await fn(session);
+    await session.commitTransaction();
+    return result;
+  } catch (err) {
+    try { await session.abortTransaction(); } catch { /* ignore */ }
+    const msg = String(err?.message || "");
+    const unsupported =
+      err?.code === 20 ||
+      err?.codeName === "IllegalOperation" ||
+      msg.includes("replica set member or mongos") ||
+      msg.includes("Transaction numbers") ||
+      msg.includes("transaction numbers");
+    if (unsupported) {
+      return await fn(null);
+    }
+    throw err;
+  } finally {
+    try { session.endSession(); } catch { /* ignore */ }
+  }
 }
 
 function calcMarketImpact(amount, liquidityFactor, volatilityMultiplier) {
@@ -119,10 +173,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     }
   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
+  return await withOptionalTransaction(async (session) => {
     // Step 1 – Load talent (accept Talent._id or User._id)
     const resolved = await resolveTalent(talentId);
     if (!resolved) throw new Error("Talent not found");
@@ -272,9 +323,6 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
       { upsert: true, session }
     );
 
-    await session.commitTransaction();
-    session.endSession();
-
     return {
       trade,
       position,
@@ -285,11 +333,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
         ask: newBidAsk.ask,
       },
     };
-  } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-    throw err;
-  }
+  });
 }
 
 // ── Close preview ───────────────────────────────────────────────────
@@ -334,10 +378,7 @@ export async function closePreview(positionId, userId) {
 
 // ── Close trade ─────────────────────────────────────────────────────
 export async function closeTrade(positionId, userId) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
+  return await withOptionalTransaction(async (session) => {
     // Step 1 – Load position
     const position = await Position.findOne({ _id: positionId, user_id: userId }).session(session);
     if (!position) throw new Error("Position not found");
@@ -464,9 +505,6 @@ export async function closeTrade(positionId, userId) {
       { session }
     );
 
-    await session.commitTransaction();
-    session.endSession();
-
     return {
       trade,
       position,
@@ -478,11 +516,7 @@ export async function closeTrade(positionId, userId) {
         ask: newBidAsk.ask,
       },
     };
-  } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-    throw err;
-  }
+  });
 }
 
 // ── Statistics / chart data ─────────────────────────────────────────

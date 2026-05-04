@@ -1,21 +1,12 @@
 import Talent from "../models/talentModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
-import { getQuote, getTalentChart, getTalentStats } from "../services/tradingService.js";
+import { getQuote, getTalentChart, getTalentStats, calcBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
-
-function calcBidAsk(currentPrice, spread) {
-  const p = parseFloat(currentPrice?.toString?.() ?? currentPrice);
-  const s = parseFloat(spread?.toString?.() ?? spread);
-  return {
-    bid: +(p - s / 2).toFixed(4),
-    ask: +(p + s / 2).toFixed(4),
-  };
-}
 
 // ── Public ──────────────────────────────────────────────────────────
 
@@ -49,6 +40,8 @@ export const getAllTalents = async (req, res) => {
       const prevClose = parseFloat((t.previous_close_price || t.current_price).toString());
       const change = +(currentPrice - prevClose).toFixed(4);
       const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+      // Compute bid/ask live so each talent quotes its own spread based on its price.
+      const { bid, ask } = calcBidAsk(currentPrice, t.spread);
 
       return {
         _id: t._id,
@@ -57,8 +50,8 @@ export const getAllTalents = async (req, res) => {
         symbol: t.symbol,
         image: t.image,
         current_price: currentPrice,
-        bid_price: parseFloat(t.bid_price.toString()),
-        ask_price: parseFloat(t.ask_price.toString()),
+        bid_price: bid,
+        ask_price: ask,
         change_amount: change,
         change_percent: changePct,
         last_trade_at: t.last_trade_at,
@@ -90,6 +83,7 @@ export const getTopTalents = async (req, res) => {
       const prevClose = parseFloat((t.previous_close_price || t.current_price).toString());
       const change = +(currentPrice - prevClose).toFixed(4);
       const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+      const { bid, ask } = calcBidAsk(currentPrice, t.spread);
 
       return {
         _id: t._id,
@@ -99,9 +93,9 @@ export const getTopTalents = async (req, res) => {
         image: t.image,
         description: t.description,
         current_price: currentPrice,
-        bid_price: parseFloat(t.bid_price.toString()),
-        ask_price: parseFloat(t.ask_price.toString()),
-        spread: parseFloat(t.spread.toString()),
+        bid_price: bid,
+        ask_price: ask,
+        spread: +(ask - bid).toFixed(4),
         min_price: parseFloat(t.min_price.toString()),
         max_price: parseFloat(t.max_price.toString()),
         change_amount: change,
@@ -147,6 +141,7 @@ export const getTalentById = async (req, res) => {
     const prevClose = parseFloat((talent.previous_close_price || talent.current_price).toString());
     const change = +(currentPrice - prevClose).toFixed(4);
     const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
+    const { bid, ask } = calcBidAsk(currentPrice, talent.spread);
 
     // Get market stats
     const marketStats = await TalentMarketStats.findOne({ talent_id: talent._id }).lean();
@@ -160,9 +155,9 @@ export const getTalentById = async (req, res) => {
       description: talent.description,
       status: talent.status,
       current_price: currentPrice,
-      bid_price: parseFloat(talent.bid_price.toString()),
-      ask_price: parseFloat(talent.ask_price.toString()),
-      spread: parseFloat(talent.spread.toString()),
+      bid_price: bid,
+      ask_price: ask,
+      spread: +(ask - bid).toFixed(4),
       min_price: parseFloat(talent.min_price.toString()),
       max_price: parseFloat(talent.max_price.toString()),
       change_amount: change,

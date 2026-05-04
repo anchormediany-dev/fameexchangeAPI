@@ -58,7 +58,10 @@ async function uniqueSymbol(base) {
  */
 export async function autoCreateTalentForUser(user) {
   const initialPrice = 100;
-  const spread = 0.5;
+  // Seed with a small spread; the trading service derives the effective spread
+  // from the talent's live price (0.5% of price, floor of 0.01) so each talent
+  // gets its own bid/ask quote instead of every talent sharing a flat default.
+  const spread = 0.01;
   const baseSlug = slugify(user.stage_name || user.full_name || user.name, String(user._id));
   const baseSymbol = symbolFor(
     user.stage_name || user.brand_name || user.name,
