@@ -55,6 +55,75 @@ const userProfile = async (req, res) => {
 //   }
 // };
 
+// PATCH /api/user/social-profiles  (JSON body)
+// Lightweight endpoint that lets a talent update / save their social profile
+// URLs without going through the heavy multipart profile update. It NEVER
+// runs the scraper, so the call always succeeds even if valuation is broken.
+// Body (all optional, accepts string | "" | null):
+//   { social_youtube, social_twitter, social_tiktok, social_facebook,
+//     social_insta, social_snap }
+export const updateSocialProfiles = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const allowed = [
+      "social_youtube",
+      "social_twitter",
+      "social_tiktok",
+      "social_facebook",
+      "social_insta",
+      "social_snap",
+    ];
+
+    const update = {};
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+        const v = req.body[key];
+        update[key] = v == null ? "" : String(v).trim();
+      }
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No social fields provided" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: update },
+      { new: true, runValidators: false }
+    ).select(
+      "social_youtube social_twitter social_tiktok social_facebook social_insta social_snap"
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Social profiles updated",
+      socials: {
+        social_youtube: user.social_youtube || "",
+        social_twitter: user.social_twitter || "",
+        social_tiktok: user.social_tiktok || "",
+        social_facebook: user.social_facebook || "",
+        social_insta: user.social_insta || "",
+        social_snap: user.social_snap || "",
+      },
+    });
+  } catch (error) {
+    console.error("updateSocialProfiles error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
 export const updateUserProfile = async (req, res) => {
   try {
     // 1. Ensure request is multipart/form-data

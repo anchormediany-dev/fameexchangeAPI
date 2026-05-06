@@ -13,6 +13,7 @@ import {
   getAllTalentUsers,
   adminDashboard,
   getFanOverview,
+  updateSocialProfiles,
 } from "../controllers/user.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadSingleFile from "../utils/multer_single_file_upload copy.js";
@@ -25,6 +26,20 @@ router.post(
   auth_token,
   upload.array("images"),
   updateUserProfile
+);
+
+// JSON-only social profile update (no scrape, never blocks talent)
+router.patch(
+  "/social-profiles",
+  auth_key_header,
+  auth_token,
+  updateSocialProfiles
+);
+router.put(
+  "/social-profiles",
+  auth_key_header,
+  auth_token,
+  updateSocialProfiles
 );
 
 // Get all users

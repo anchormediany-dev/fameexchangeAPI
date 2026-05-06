@@ -1,6 +1,8 @@
 import Talent from "../models/talentModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
+import Position from "../models/positionModel.js";
+import User from "../models/user.js";
 import { getQuote, getTalentChart, getTalentStats, calcBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
@@ -74,9 +76,41 @@ export const getAllTalents = async (req, res) => {
 export const getTopTalents = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    const sortBy = req.query.sort || "price"; // price | volume | gainers | losers
+    const sortBy = req.query.sort || "price"; // price | volume | gainers | losers | bts
 
     const talents = await Talent.find({ status: "active" }).lean();
+    const talentIds = talents.map((t) => t._id);
+
+    // ── Aggregate live BTS-leaderboard fields in parallel ──────────────
+    // - availableUnits / comprisedValue: derived from currently OPEN positions
+    // - volume_24h / high / low : from TalentMarketStats
+    // - token_brand_name        : from the talent's owning User
+    const [posAgg, statsList, userList] = await Promise.all([
+      Position.aggregate([
+        { $match: { talent_id: { $in: talentIds }, status: "open" } },
+        {
+          $group: {
+            _id: "$talent_id",
+            unitsHeld: { $sum: { $toDouble: "$units" } },
+            invested: { $sum: { $toDouble: "$invested_amount" } },
+          },
+        },
+      ]),
+      TalentMarketStats.find({ talent_id: { $in: talentIds } }).lean(),
+      User.find({
+        _id: {
+          $in: talents.map((t) => t.userId).filter(Boolean),
+        },
+      })
+        .select("_id token_brand_name brand_name stage_name name full_name")
+        .lean(),
+    ]);
+
+    const posByTalent = new Map(posAgg.map((p) => [String(p._id), p]));
+    const statsByTalent = new Map(
+      statsList.map((s) => [String(s.talent_id), s])
+    );
+    const userByMap = new Map(userList.map((u) => [String(u._id), u]));
 
     let items = talents.map((t) => {
       const currentPrice = parseFloat(t.current_price.toString());
@@ -84,6 +118,31 @@ export const getTopTalents = async (req, res) => {
       const change = +(currentPrice - prevClose).toFixed(4);
       const changePct = prevClose > 0 ? +((change / prevClose) * 100).toFixed(2) : 0;
       const { bid, ask } = calcBidAsk(currentPrice, t.spread);
+
+      const pos = posByTalent.get(String(t._id));
+      const stats = statsByTalent.get(String(t._id));
+      const owner = t.userId ? userByMap.get(String(t.userId)) : null;
+
+      const unitsHeld = pos ? +Number(pos.unitsHeld || 0).toFixed(6) : 0;
+      const invested = pos ? +Number(pos.invested || 0).toFixed(2) : 0;
+      const liquidityFactor = parseFloat((t.liquidity_factor || 0).toString());
+      // Available units = liquidity pool minus what is currently held by traders.
+      // Falls back to liquidity / price if there are no open positions yet.
+      const totalUnitsPool =
+        currentPrice > 0 ? liquidityFactor / currentPrice : 0;
+      const availableUnits = Math.max(
+        0,
+        +(totalUnitsPool - unitsHeld).toFixed(6)
+      );
+      const volume24h = stats
+        ? parseFloat(stats.volume_24h.toString())
+        : 0;
+
+      // BTS shorthand fields (additive – existing keys untouched)
+      const btsWorth = +(currentPrice * unitsHeld).toFixed(2); // market value of held shares
+      const comprisedValue = invested; // total $ invested in open positions
+      const costPerUnit = currentPrice;
+      const performance = changePct; // 24h % – frontend can switch ranges via /chart
 
       return {
         _id: t._id,
@@ -102,6 +161,21 @@ export const getTopTalents = async (req, res) => {
         change_percent: changePct,
         last_trade_at: t.last_trade_at,
         userId: t.userId,
+        // ── BTS leaderboard ──
+        token_brand_name:
+          owner?.token_brand_name ||
+          owner?.brand_name ||
+          owner?.stage_name ||
+          owner?.full_name ||
+          owner?.name ||
+          t.name,
+        bts_worth: btsWorth,
+        comprised_value: comprisedValue,
+        available_units: availableUnits,
+        cost_per_unit: costPerUnit,
+        change: change,
+        volume: volume24h,
+        performance,
       };
     });
 
@@ -111,6 +185,12 @@ export const getTopTalents = async (req, res) => {
         break;
       case "losers":
         items.sort((a, b) => a.change_percent - b.change_percent);
+        break;
+      case "volume":
+        items.sort((a, b) => b.volume - a.volume);
+        break;
+      case "bts":
+        items.sort((a, b) => b.bts_worth - a.bts_worth);
         break;
       case "price":
       default:
@@ -124,6 +204,12 @@ export const getTopTalents = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+};
+
+// GET /api/talents/bts/leaderboard – alias of /top with sort=bts default
+export const getBtsLeaderboard = async (req, res) => {
+  req.query.sort = req.query.sort || "bts";
+  return getTopTalents(req, res);
 };
 
 // GET /api/talents/:id

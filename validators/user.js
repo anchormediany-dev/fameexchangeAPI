@@ -64,13 +64,14 @@ export const signupSchema = z
     is_rep_have: z.boolean().default(false),
     rep_type: z.string().optional(),
 
-    // Socials
-    social_youtube: z.string().url("Invalid YouTube URL").optional(),
-    social_twitter: z.string().url("Invalid Twitter URL").optional(),
-    social_tiktok: z.string().url("Invalid TikTok URL").optional(),
-    social_facebook: z.string().url("Invalid Facebook URL").optional(),
-    social_insta: z.string().url("Invalid Instagram URL").optional(),
-    social_snap: z.string().url("Invalid Snapchat URL").optional(),
+    // Socials – accept full URL, handle, or empty string. We never block signup
+    // because of an invalid social profile; valuation can be retried later.
+    social_youtube: z.string().trim().optional().nullable().or(z.literal("")),
+    social_twitter: z.string().trim().optional().nullable().or(z.literal("")),
+    social_tiktok: z.string().trim().optional().nullable().or(z.literal("")),
+    social_facebook: z.string().trim().optional().nullable().or(z.literal("")),
+    social_insta: z.string().trim().optional().nullable().or(z.literal("")),
+    social_snap: z.string().trim().optional().nullable().or(z.literal("")),
 
     // Other optional profile fields
     full_name: z.string().optional(),
