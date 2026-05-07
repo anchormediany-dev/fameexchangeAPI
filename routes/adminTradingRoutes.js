@@ -1,14 +1,11 @@
 import express from "express";
 import auth_key_header from "../middleware/auth_key_header.js";
 import auth_admin from "../middleware/auth_admin.js";
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 import {
-//import { createRequire } from 'module';
-//const require = createRequire(import.meta.url);
-//const require = createRequire(import.meta.url);
-//import { createRequire } from 'module';
-//const require = createRequire(import.meta.url);
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+
   createTalent,
   updateTalent,
   adjustTalentPrice,
