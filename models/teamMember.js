@@ -8,6 +8,7 @@ const teamMemberSchema = new mongoose.Schema(
     bio: { type: String, trim: true },
     imageUrl: { type: String, trim: true },
     isVisible: { type: Boolean, default: true },
+    order: { type: Number, default: 0, index: true },
     addedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

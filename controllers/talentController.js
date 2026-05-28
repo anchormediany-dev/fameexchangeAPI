@@ -3,6 +3,7 @@ import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import Position from "../models/positionModel.js";
 import User from "../models/user.js";
+import SiteSettings from "../models/siteSettingsModel.js";
 import { getQuote, getTalentChart, getTalentStats, calcBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
@@ -451,5 +452,92 @@ export const getMarketLogs = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ----- Admin: upload/replace talent profile image -----
+// PUT /api/admin/talents/:id/image    (multipart/form-data, field "image")
+// Requires multer middleware in the route (upload.single("image")).
+export const uploadTalentImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No image file provided" });
+    }
+    const talent = await Talent.findById(id);
+    if (!talent) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent not found" });
+    }
+    // multer stores under uploads/profile (see utils/profile_images.js).
+    // req.file.path gives the relative on-disk path which we normalize.
+    const relPath = (req.file.path || "")
+      .replace(/\\/g, "/")
+      .replace(/^\/?/, "/");
+    const publicPath = relPath.startsWith("/uploads/")
+      ? relPath
+      : `/uploads/${req.file.filename}`;
+    talent.image = publicPath;
+    await talent.save();
+    return res.json({ success: true, data: talent.toDisplay() });
+  } catch (err) {
+    console.error("uploadTalentImage error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PUT /api/admin/talents/:id/featured
+// Body: { featured_in_inverse: bool, inverse_order: number, priority: number }
+export const updateTalentFeatured = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const update = {};
+    if (typeof req.body?.featured_in_inverse === "boolean") {
+      update.featured_in_inverse = req.body.featured_in_inverse;
+    }
+    if (Number.isFinite(req.body?.inverse_order)) {
+      update.inverse_order = req.body.inverse_order;
+    }
+    if (Number.isFinite(req.body?.priority)) {
+      update.priority = req.body.priority;
+    }
+    const talent = await Talent.findByIdAndUpdate(id, update, { new: true });
+    if (!talent) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Talent not found" });
+    }
+    return res.json({ success: true, data: talent.toDisplay() });
+  } catch (err) {
+    console.error("updateTalentFeatured error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/inverse-featured
+// Public: returns talents flagged for the Inverse home section, sorted by
+// inverse_order ascending, limited by SiteSettings.inverseDisplayCount.
+export const getInverseFeaturedTalents = async (req, res) => {
+  try {
+    const settings = await SiteSettings.findOne({ singleton: "main" });
+    const limit = settings?.inverseDisplayCount ?? 8;
+
+    const talents = await Talent.find({
+      status: "active",
+      featured_in_inverse: true,
+    })
+      .sort({ inverse_order: 1, priority: -1, createdAt: -1 })
+      .limit(limit);
+
+    return res.json({
+      success: true,
+      items: talents.map((t) => t.toDisplay()),
+    });
+  } catch (err) {
+    console.error("getInverseFeaturedTalents error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

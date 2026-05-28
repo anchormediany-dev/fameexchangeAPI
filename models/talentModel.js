@@ -31,6 +31,11 @@ const talentSchema = new mongoose.Schema(
     last_trade_at: { type: Date, default: null },
     image: { type: String, default: null },
     description: { type: String, default: "" },
+    // Admin-controlled flag to surface this talent in the Inverse section
+    // of the home page. Sorted by `inverse_order` ascending.
+    featured_in_inverse: { type: Boolean, default: false, index: true },
+    inverse_order: { type: Number, default: 0 },
+    priority: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
