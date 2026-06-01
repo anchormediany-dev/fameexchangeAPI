@@ -94,6 +94,10 @@ const userSchema = new mongoose.Schema(
 
     isDeleted: { type: Boolean, default: false },
     otpCount: { type: Number, default: 0 },
+
+    // Admin-controlled "Inverse" section featuring on the home page.
+    featured_in_inverse: { type: Boolean, default: false, index: true },
+    inverse_order: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

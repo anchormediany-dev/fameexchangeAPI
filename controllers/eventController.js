@@ -984,7 +984,17 @@ export const getMonthlyEvents = async (req, res) => {
     if (q && q.trim()) {
       applyMonth = toBool(withinMonth, false);
       const rx = new RegExp(escapeRegex(q.trim()), "i");
-      filter.title = rx;
+      // Match across the fields a user might intuitively search by.
+      filter.$or = [
+        { title: rx },
+        { details: rx },
+        { location: rx },
+        { address: rx },
+        { category: rx },
+        { event_type: rx },
+        { website: rx },
+        { talent: rx },
+      ];
     }
 
     if (applyMonth) {

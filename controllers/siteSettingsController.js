@@ -13,6 +13,7 @@ const DEFAULT_MENU = [
   { key: "about", label: "About", path: "/about", order: 7 },
   { key: "contact", label: "Contact", path: "/contact", order: 8 },
   { key: "faq", label: "FAQ", path: "/faq", order: 9 },
+  { key: "inverse", label: "Inverse", path: "/inverse", order: 10 },
 ];
 
 const DEFAULT_FOOTER = [

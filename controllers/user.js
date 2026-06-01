@@ -268,16 +268,81 @@ export const getAllUsers = async (req, res) => {
 };
 export const getAllTalentUsers = async (req, res) => {
   try {
-    // if (req.user.role !== "ADMIN") {
-    //   return res.status(403).json({ message: "Access denied" });
-    // }
-
-    const taleUsers = await User.find({ role: "TALENT" });
-    console.log(taleUsers);
+    const taleUsers = await User.find({ role: "TALENT" })
+      .sort({ inverse_order: 1, createdAt: -1 })
+      .lean();
     res.status(200).json({ taleUsers });
   } catch (err) {
     console.error("Get all users error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// PUT /api/user/admin/:id/featured  (admin)
+// Body: { featured_in_inverse?: bool, inverse_order?: number }
+export const updateUserFeatured = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user id" });
+    }
+    const update = {};
+    if (typeof req.body?.featured_in_inverse === "boolean") {
+      update.featured_in_inverse = req.body.featured_in_inverse;
+    }
+    if (Number.isFinite(Number(req.body?.inverse_order))) {
+      update.inverse_order = Number(req.body.inverse_order);
+    }
+    const user = await User.findByIdAndUpdate(id, update, { new: true })
+      .select("-password -OTP_code")
+      .lean();
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    return res.json({ success: true, data: user });
+  } catch (err) {
+    console.error("updateUserFeatured error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PUT /api/user/admin/:id/image  (admin)
+// Multipart: field "image" — sets the user's primary image (push to images[]).
+export const uploadUserImage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user id" });
+    }
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No image file provided" });
+    }
+    const relPath = (req.file.path || "")
+      .replace(/\\/g, "/")
+      .replace(/^\/?/, "/");
+    const publicPath = relPath.startsWith("/uploads/")
+      ? relPath
+      : `/uploads/${req.file.filename}`;
+    const user = await User.findById(id);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    user.images = [{ fileUrl: publicPath }];
+    await user.save();
+    return res.json({ success: true, data: { _id: user._id, images: user.images } });
+  } catch (err) {
+    console.error("uploadUserImage error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
