@@ -19,6 +19,7 @@ const oauthStateSchema = new mongoose.Schema({
   },
   platform: { type: String, required: true },
   codeVerifier: { type: String }, // PKCE (Twitter)
+  returnPath: { type: String, default: null }, // optional frontend path to redirect after OAuth
   createdAt: { type: Date, default: Date.now, expires: 600 }, // TTL: 10 min
 });
 

@@ -21,10 +21,11 @@ const makePkce = () => {
   return { codeVerifier, codeChallenge };
 };
 
-const frontendRedirect = (userId, platform, status, reason) => {
+const frontendRedirect = (userId, platform, status, reason, returnPath) => {
   const params = new URLSearchParams({ social: platform, status });
   if (reason) params.set("reason", reason);
-  return `${FRONTEND_PUBLIC_URL}/update-profile/${userId}?${params.toString()}`;
+  const path = returnPath || `update-profile/${userId}`;
+  return `${FRONTEND_PUBLIC_URL}/${path}?${params.toString()}`;
 };
 
 /**
@@ -57,7 +58,8 @@ export const startConnect = async (req, res) => {
       ({ codeVerifier, codeChallenge } = makePkce());
     }
 
-    await OAuthState.create({ state, userId, platform, codeVerifier });
+    const { returnPath } = req.body;
+    await OAuthState.create({ state, userId, platform, codeVerifier, returnPath: returnPath || null });
 
     const url = provider.getAuthUrl({ state, codeChallenge });
     return res.json({ success: true, url });
@@ -81,11 +83,12 @@ export const handleCallback = async (req, res) => {
   const userId = stateDoc?.userId;
 
   // Helper to clean up + bounce back to the app.
+  const returnPath = stateDoc?.returnPath || null;
   const finish = async (status, reason) => {
     if (stateDoc) await OAuthState.deleteOne({ _id: stateDoc._id });
     // If we never resolved a user (bad/expired state) send them to login.
     const target = userId
-      ? frontendRedirect(userId, platform, status, reason)
+      ? frontendRedirect(userId, platform, status, reason, returnPath)
       : `${FRONTEND_PUBLIC_URL}/login?social=${platform}&status=error&reason=${reason || "expired"}`;
     return res.redirect(target);
   };
