@@ -24,17 +24,26 @@ export const FRONTEND_PUBLIC_URL = (
 export const redirectUri = (platform) =>
   `${BACKEND_PUBLIC_URL}/api/social-connections/${platform}/callback`;
 
+// Use getters so env vars are read at call time, not at module load time.
+// This avoids an ES-module hoisting race where dotenv.config() in app.js
+// runs AFTER this module is first evaluated.
 export const providerCredentials = {
-  youtube: {
-    clientId: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  get youtube() {
+    return {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    };
   },
-  twitter: {
-    clientId: process.env.TWITTER_CLIENT_ID,
-    clientSecret: process.env.TWITTER_CLIENT_SECRET,
+  get twitter() {
+    return {
+      clientId: process.env.TWITTER_CLIENT_ID,
+      clientSecret: process.env.TWITTER_CLIENT_SECRET,
+    };
   },
-  instagram: {
-    clientId: process.env.FACEBOOK_APP_ID,
-    clientSecret: process.env.FACEBOOK_APP_SECRET,
+  get instagram() {
+    return {
+      clientId: process.env.FACEBOOK_APP_ID,
+      clientSecret: process.env.FACEBOOK_APP_SECRET,
+    };
   },
 };
