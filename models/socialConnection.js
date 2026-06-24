@@ -1,0 +1,58 @@
+import mongoose from "mongoose";
+
+/**
+ * A verified ownership link between a Fame Exchange user and one of their
+ * social-media accounts, established via OAuth (the user logged in to the
+ * platform and granted us read access). This is INDEPENDENT of the legacy
+ * scraper-based `Networth` model — it powers `social_worth`.
+ *
+ * `followers` is the real count pulled from the platform API. For platforms
+ * that require a paid tier (X) or app review (Instagram), the connection can
+ * exist with followers = 0 until that access is live ("connect now, count later").
+ */
+const socialConnectionSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    platform: {
+      type: String,
+      required: true,
+      enum: ["youtube", "twitter", "instagram", "facebook"],
+    },
+
+    // Identity on the platform
+    providerUserId: { type: String }, // channel id / user id / ig user id
+    username: { type: String }, // handle / channel title
+    profileUrl: { type: String },
+
+    // The number that feeds social_worth
+    followers: { type: Number, default: 0 },
+
+    // OAuth material. select:false so it is never returned by default queries
+    // and never leaks through the API. Needed to refresh follower counts later.
+    accessToken: { type: String, select: false },
+    refreshToken: { type: String, select: false },
+    tokenExpiresAt: { type: Date, select: false },
+    scope: { type: String, select: false },
+
+    status: {
+      type: String,
+      enum: ["connected", "revoked", "error"],
+      default: "connected",
+    },
+    // When followers could not be fetched yet (paid tier / app review pending)
+    fetchPending: { type: Boolean, default: false },
+    lastError: { type: String },
+    lastSyncedAt: { type: Date },
+  },
+  { timestamps: true }
+);
+
+// One connection per platform per user
+socialConnectionSchema.index({ userId: 1, platform: 1 }, { unique: true });
+
+export default mongoose.model("SocialConnection", socialConnectionSchema);

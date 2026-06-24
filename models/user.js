@@ -84,6 +84,10 @@ const userSchema = new mongoose.Schema(
     token_brand_name: { type: String },
     token_name: { type: String },
     networth: { type: String },
+    // Sum of follower counts across OAuth-verified social connections.
+    // Computed independently of `networth` (the legacy scraper value).
+    // Stays 0 until the user connects at least one social account.
+    social_worth: { type: Number, default: 0 },
     lastlogin: { type: String },
 
     category: { type: String },
