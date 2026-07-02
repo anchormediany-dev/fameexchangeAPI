@@ -2,7 +2,10 @@ import express from "express";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
+import mongoose from "mongoose";
 dotenv.config();
 import userRoutes from "./routes/user.js";
 import authRoutes from "./routes/auth.js";
@@ -34,13 +37,77 @@ import tradeRoutes from "./routes/tradeRoutes.js";
 import positionRoutes from "./routes/positionRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import adminTradingRoutes from "./routes/adminTradingRoutes.js";
+import futuresRoutes from "./routes/futuresRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
+import { startFameScoreScheduler } from "./services/famescoreScheduler.js";
+import { startFuturesScheduler } from "./services/futuresScheduler.js";
+
+// ── Global process error guards ──────────────────────────────────────────────
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[unhandledRejection]", { promise, reason });
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err);
+  process.exit(1);
+});
+
+const ALLOWED_ORIGINS = [
+  "https://app.thefameexchange.com",
+  "https://famefutures.com",
+  ...(process.env.NODE_ENV !== "production"
+    ? ["http://localhost:5173", "http://localhost:5174"]
+    : []),
+];
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests, please try again later." },
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests, please slow down." },
+});
 
 const app = express();
-app.use(cors());
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow requests with no origin (server-to-server, Postman, etc.)
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      cb(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+
+// Stripe webhook needs the raw request body for signature verification.
+// Must run before express.json()/urlencoded() below, since body-parser
+// middleware skips re-parsing once one of them has consumed the stream.
+app.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    next();
+  }
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
+
+// Rate limiting — auth endpoints get a tighter window
+app.use("/api/auth", authLimiter);
+app.use("/api", apiLimiter);
 
 // Connect DB
 connectToDatabase();
@@ -48,14 +115,8 @@ createInitialKeyIfNotExists()
   .then(() => console.log("Initial key check completed"))
   .catch((err) => console.error("Error initializing key:", err));
 
-app.post(
-  "/api/billing/webhook",
-  express.raw({ type: "application/json" }),
-  (req, _res, next) => {
-    // keep raw body for signature verification
-    next();
-  }
-);
+startFameScoreScheduler();
+startFuturesScheduler();
 
 // Routes
 app.use("/api/user", userRoutes);
@@ -95,11 +156,19 @@ app.use("/api/trades", tradeRoutes);
 app.use("/api/positions", positionRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminTradingRoutes);
+app.use("/api/futures", futuresRoutes);
 
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {
-  res.status(200).json({ status: "UP" });
+  const dbState = mongoose.connection.readyState; // 1 = connected
+  const status = dbState === 1 ? "UP" : "DEGRADED";
+  res.status(dbState === 1 ? 200 : 503).json({
+    status,
+    db: dbState === 1 ? "connected" : "disconnected",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // 404 Handler

@@ -11,8 +11,12 @@ import {
   getBtsLeaderboard,
   getInverseFeaturedTalents,
 } from "../controllers/talentController.js";
+import { apply } from "../controllers/talentApplicationController.js";
 
 const router = express.Router();
+
+// Self-serve talent application (auth required)
+router.post("/apply", auth_key_header, auth_token, apply);
 
 // Public talent endpoints (require API key only)
 router.get("/", auth_key_header, getAllTalents);

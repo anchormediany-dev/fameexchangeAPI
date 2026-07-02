@@ -13,7 +13,7 @@ const talentPriceHistorySchema = new mongoose.Schema(
     volume: { type: mongoose.Schema.Types.Decimal128, default: 0 },
     source_type: {
       type: String,
-      enum: ["trade", "admin_adjustment", "system"],
+      enum: ["trade", "admin_adjustment", "system", "valuation_update"],
       default: "trade",
     },
     source_trade_id: {

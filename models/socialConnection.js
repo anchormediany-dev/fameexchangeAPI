@@ -21,7 +21,7 @@ const socialConnectionSchema = new mongoose.Schema(
     platform: {
       type: String,
       required: true,
-      enum: ["youtube", "twitter", "instagram", "facebook"],
+      enum: ["youtube", "twitter", "instagram", "facebook", "tiktok"],
     },
 
     // Identity on the platform

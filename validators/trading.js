@@ -4,7 +4,10 @@ export const createTalentSchema = z.object({
   name: z.string({ required_error: "Name is required" }).min(1, "Name is required"),
   slug: z.string({ required_error: "Slug is required" }).min(1, "Slug is required"),
   symbol: z.string({ required_error: "Symbol is required" }).min(1, "Symbol is required").max(10),
-  current_price: z.number({ required_error: "Current price is required" }).positive("Price must be positive"),
+  // Either provide current_price directly, or set auto_price:true + userId to
+  // have the initial price computed by the FameScore valuation engine.
+  current_price: z.number().positive("Price must be positive").optional(),
+  auto_price: z.boolean().optional(),
   spread: z.number().positive().optional(),
   liquidity_factor: z.number().positive().optional(),
   volatility_multiplier: z.number().positive().optional(),
@@ -17,7 +20,10 @@ export const createTalentSchema = z.object({
   userId: z.string().optional(),
   image: z.string().optional(),
   description: z.string().optional(),
-});
+}).refine(
+  (data) => data.current_price != null || (data.auto_price && data.userId),
+  { message: "Either current_price, or auto_price:true with a userId, is required" }
+);
 
 export const updateTalentSchema = z.object({
   name: z.string().min(1).optional(),

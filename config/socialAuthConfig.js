@@ -46,4 +46,13 @@ export const providerCredentials = {
       clientSecret: process.env.FACEBOOK_APP_SECRET,
     };
   },
+  get tiktok() {
+    // TikTok calls these "client_key"/"client_secret" rather than the more
+    // common "client_id" naming, but we keep the property names consistent
+    // with every other provider here for a uniform interface.
+    return {
+      clientId: process.env.TIKTOK_CLIENT_KEY,
+      clientSecret: process.env.TIKTOK_CLIENT_SECRET,
+    };
+  },
 };

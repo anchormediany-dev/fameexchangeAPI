@@ -1,13 +1,9 @@
 // services/stripePaymentService.js
-import Stripe from "stripe";
+import stripe from "./stripeClient.js";
 import Payment from "../models/paymentModel.js";
 import FanInverseRequest from "../models/fanInverseRequestModel.js";
 import Notification from "../models/notificationModel.js";
 import Session from "../models/sessionModel.js";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2024-06-20",
-});
 
 /**
  * POST /stripe/webhook   (unsafe dev handler; no signature verification)

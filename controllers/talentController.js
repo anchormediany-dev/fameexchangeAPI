@@ -6,6 +6,13 @@ import User from "../models/user.js";
 import SiteSettings from "../models/siteSettingsModel.js";
 import { getQuote, getTalentChart, getTalentStats, calcBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
+import {
+  previewValuation,
+  recalculateTalentValuation,
+  recalculateAllTalentValuations,
+} from "../services/famescoreService.js";
+import { appendLedgerEntry } from "../services/ledgerService.js";
+import { MIN_FAMESCORE_TRADEABLE } from "../config/futuresConfig.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
@@ -20,11 +27,12 @@ export const getAllTalents = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const filter = { status: "active" };
+    const filter = { status: "active", tier: "tradeable" };
     if (req.query.search) {
+      const escaped = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       filter.$or = [
-        { name: { $regex: req.query.search, $options: "i" } },
-        { symbol: { $regex: req.query.search, $options: "i" } },
+        { name: { $regex: escaped, $options: "i" } },
+        { symbol: { $regex: escaped, $options: "i" } },
       ];
     }
 
@@ -79,7 +87,7 @@ export const getTopTalents = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const sortBy = req.query.sort || "price"; // price | volume | gainers | losers | bts
 
-    const talents = await Talent.find({ status: "active" }).lean();
+    const talents = await Talent.find({ status: "active", tier: "tradeable" }).lean();
     const talentIds = talents.map((t) => t._id);
 
     // ── Aggregate live BTS-leaderboard fields in parallel ──────────────
@@ -272,12 +280,13 @@ export const getTalentQuote = async (req, res) => {
   }
 };
 
-// GET /api/talents/:id/chart?range=1D|1W|1M|3M|1Y|5Y|10Y
+// GET /api/talents/:id/chart?range=1D|1W|1M|3M|1Y|5Y|10Y&format=ohlc|line
 export const getTalentChartData = async (req, res) => {
   try {
     const range = req.query.range || "1D";
-    const data = await getTalentChart(req.params.id, range);
-    res.json({ success: true, range, data });
+    const format = req.query.format || "ohlc";
+    const data = await getTalentChart(req.params.id, range, format);
+    res.json({ success: true, range, format, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -299,40 +308,111 @@ export const getTalentStatistics = async (req, res) => {
 export const createTalent = async (req, res) => {
   try {
     const data = createTalentSchema.parse(req.body);
+    const minPrice = data.min_price || 1.0;
+    const maxPrice = data.max_price || 100000;
 
-    const { bid, ask } = calcBidAsk(data.current_price, data.spread || 0.5);
+    let currentPrice = data.current_price;
+    let fameScoreResult = null;
+    if (currentPrice == null && data.auto_price) {
+      fameScoreResult = await previewValuation(data.userId, minPrice, maxPrice);
+      currentPrice = fameScoreResult.suggestedPrice;
+    }
+
+    const { bid, ask } = calcBidAsk(currentPrice, data.spread || 0.5);
+
+    // A talent only gets gated into the futures tier when we actually know a
+    // FameScore for them (i.e. auto_price was used). Manually admin-priced
+    // talents default straight to tradeable, same as before this feature.
+    const tier =
+      fameScoreResult && fameScoreResult.fameScore < MIN_FAMESCORE_TRADEABLE
+        ? "futures"
+        : "tradeable";
 
     const talent = await Talent.create({
       ...data,
       bid_price: D128(bid),
       ask_price: D128(ask),
-      current_price: D128(data.current_price),
-      previous_close_price: D128(data.current_price),
+      current_price: D128(currentPrice),
+      previous_close_price: D128(currentPrice),
       spread: D128(data.spread || 0.5),
       liquidity_factor: D128(data.liquidity_factor || 50000),
       volatility_multiplier: D128(data.volatility_multiplier || 1.0),
-      min_price: D128(data.min_price || 1.0),
-      max_price: D128(data.max_price || 100000),
+      min_price: D128(minPrice),
+      max_price: D128(maxPrice),
       max_move_per_trade: D128(data.max_move_per_trade || 5.0),
       min_order_amount: D128(data.min_order_amount || 10),
       max_order_amount: D128(data.max_order_amount || 100000),
+      tier,
+      futures_started_at: tier === "futures" ? new Date() : null,
+      ...(fameScoreResult
+        ? {
+            fame_score: fameScoreResult.fameScore,
+            fame_score_breakdown: fameScoreResult.breakdown,
+            fame_score_updated_at: new Date(),
+          }
+        : {}),
     });
 
     // Write initial price history
-    await TalentPriceHistory.create({
+    const priceHistoryEntry = await TalentPriceHistory.create({
       talent_id: talent._id,
-      price: D128(data.current_price),
+      price: D128(currentPrice),
       bid_price: D128(bid),
       ask_price: D128(ask),
       volume: D128(0),
       source_type: "system",
       recorded_at: new Date(),
     });
+    await appendLedgerEntry(
+      "talent_price_history",
+      priceHistoryEntry._id,
+      priceHistoryEntry.toObject()
+    );
 
     res.status(201).json({ success: true, talent: talent.toDisplay() });
   } catch (err) {
     const error = err.errors?.[0]?.message || err.message;
     res.status(400).json({ success: false, message: error });
+  }
+};
+
+// GET /api/admin/talents/preview-famescore?userId=...&min_price=&max_price=
+export const previewFameScore = async (req, res) => {
+  try {
+    const { userId, min_price, max_price } = req.query;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "userId is required" });
+    }
+    const result = await previewValuation(
+      userId,
+      min_price ? parseFloat(min_price) : 1.0,
+      max_price ? parseFloat(max_price) : 100000
+    );
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/talents/:id/recalculate-valuation
+export const recalculateValuation = async (req, res) => {
+  try {
+    const result = await recalculateTalentValuation(req.params.id);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/talents/recalculate-all-valuations
+// Manually triggers the same batch run the nightly cron performs — useful for
+// testing the scheduler's underlying logic without waiting for it to fire.
+export const recalculateAllValuations = async (req, res) => {
+  try {
+    const summary = await recalculateAllTalentValuations();
+    res.json({ success: true, ...summary });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
 };
 
@@ -392,7 +472,7 @@ export const adjustTalentPrice = async (req, res) => {
     await talent.save();
 
     // Log to price history
-    await TalentPriceHistory.create({
+    const priceHistoryEntry = await TalentPriceHistory.create({
       talent_id: talent._id,
       price: D128(newPrice),
       bid_price: D128(bid),
@@ -401,6 +481,11 @@ export const adjustTalentPrice = async (req, res) => {
       source_type: "admin_adjustment",
       recorded_at: new Date(),
     });
+    await appendLedgerEntry(
+      "talent_price_history",
+      priceHistoryEntry._id,
+      priceHistoryEntry.toObject()
+    );
 
     res.json({
       success: true,

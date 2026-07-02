@@ -1,6 +1,5 @@
 // controllers/billingController.js
-import Stripe from "stripe";
-import dotenv from "dotenv";
+import stripe from "../services/stripeClient.js";
 import mongoose from "mongoose";
 import Event from "../models/eventModel.js";
 import Payment from "../models/paymentModel.js";
@@ -15,10 +14,6 @@ import {
   safeTotal,
   toMinorUnits,
 } from "../utils/money.js";
-
-dotenv.config();
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 function assert(v, msg, code = 400) {
   if (!v) {
@@ -320,8 +315,21 @@ export const stripeWebhook = async (req, res, next) => {
   try {
     let event;
 
-    // Unsafe fallback for local testing without signature
-    event = req.body;
+    const sig = req.headers["stripe-signature"];
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    if (secret && sig) {
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, secret);
+      } catch (err) {
+        return res.status(400).json({ error: `Webhook signature error: ${err.message}` });
+      }
+    } else if (process.env.NODE_ENV !== "production") {
+      // Allow unsigned events only in development
+      event = req.body;
+    } else {
+      return res.status(400).json({ error: "Missing webhook signature" });
+    }
 
     switch (event.type) {
       case "payment_intent.succeeded": {
@@ -963,10 +971,9 @@ export const listUserTransactions = async (req, res, next) => {
 
     parsed.match.userId = uid;
 
-    // Optional: enforce "self or admin" here (replace with your real auth)
-    // if (String(req.user?._id) !== String(uid) && req.user?.role !== "ADMIN") {
-    //   return res.status(403).json({ success: false, error: "Forbidden" });
-    // }
+    if (String(req.user?._id) !== String(uid) && !req.user?.isAdmin) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
 
     const data = await listCore(parsed);
     res.json({ success: true, ...data });

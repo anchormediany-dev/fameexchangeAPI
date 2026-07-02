@@ -28,6 +28,13 @@ const notificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       required: false,
     },
+    // Optional call-to-action URL (internal route or external link). When
+    // present, the frontend renders the notification with a clickable
+    // "Click here" action instead of plain text.
+    link: {
+      type: String,
+      required: false,
+    },
   },
   { timestamps: true }
 );

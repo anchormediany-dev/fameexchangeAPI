@@ -8,6 +8,7 @@ import WalletTransaction from "../models/walletTransactionModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import { resolveTalent } from "./talentResolver.js";
+import { appendLedgerEntry } from "./ledgerService.js";
 
 const d = (v) => parseFloat(v?.toString?.() ?? v ?? 0);
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
@@ -43,7 +44,7 @@ function calcBidAsk(currentPrice, spread) {
   };
 }
 
-export { calcBidAsk, effectiveSpread };
+export { calcBidAsk, effectiveSpread, clampPrice, enforceMaxMovePerTrade, enforceDailyLimit };
 
 // ── Optional transaction helper ─────────────────────────────────────
 // MongoDB multi-document transactions require a replica set / mongos.
@@ -119,6 +120,7 @@ export async function getQuote(talentId) {
   const talent = await resolveTalent(talentId);
   if (!talent) throw new Error("Talent not found");
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
+  if (talent.tier === "futures") throw new Error("Talent is in the Futures tier and is not yet tradeable");
 
   const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
   return {
@@ -137,6 +139,7 @@ export async function previewTrade(userId, talentId, side, amount) {
   const talent = await resolveTalent(talentId);
   if (!talent) throw new Error("Talent not found");
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
+  if (talent.tier === "futures") throw new Error("Talent is in the Futures tier and is not yet tradeable");
 
   const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
   const entryPrice = side === "buy" ? ask : bid;
@@ -180,6 +183,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     const talent = await Talent.findById(resolved._id).session(session);
     if (!talent) throw new Error("Talent not found");
     if (talent.status !== "active") throw new Error("Talent is not active for trading");
+    if (talent.tier === "futures") throw new Error("Talent is in the Futures tier and is not yet tradeable");
     talentId = talent._id;
 
     // Step 2 – Validate order size
@@ -257,7 +261,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     );
 
     // Step 10 – Wallet transaction log
-    await WalletTransaction.create(
+    const [walletTransaction] = await WalletTransaction.create(
       [
         {
           user_id: userId,
@@ -289,7 +293,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     await talent.save({ session });
 
     // Step 12 – Price history
-    await TalentPriceHistory.create(
+    const [priceHistoryEntry] = await TalentPriceHistory.create(
       [
         {
           talent_id: talentId,
@@ -332,7 +336,25 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
         bid: newBidAsk.bid,
         ask: newBidAsk.ask,
       },
+      _ledger: { walletTransaction, priceHistoryEntry },
     };
+  }).then(async (result) => {
+    const { _ledger, ...publicResult } = result;
+    // Chain AFTER the transaction has committed — a ledger entry must never
+    // exist for a trade that didn't actually happen. Appends are serialized
+    // in-process (see ledgerService) so this trio stays in strict order.
+    await appendLedgerEntry("trade", result.trade._id, result.trade.toObject());
+    await appendLedgerEntry(
+      "wallet_transaction",
+      _ledger.walletTransaction._id,
+      _ledger.walletTransaction.toObject()
+    );
+    await appendLedgerEntry(
+      "talent_price_history",
+      _ledger.priceHistoryEntry._id,
+      _ledger.priceHistoryEntry.toObject()
+    );
+    return publicResult;
   });
 }
 
@@ -455,7 +477,7 @@ export async function closeTrade(positionId, userId) {
     );
 
     // Step 8 – Wallet transaction log
-    await WalletTransaction.create(
+    const [walletTransaction] = await WalletTransaction.create(
       [
         {
           user_id: userId,
@@ -489,7 +511,7 @@ export async function closeTrade(positionId, userId) {
     await talent.save({ session });
 
     // Step 10 – Price history
-    await TalentPriceHistory.create(
+    const [priceHistoryEntry] = await TalentPriceHistory.create(
       [
         {
           talent_id: position.talent_id,
@@ -515,45 +537,89 @@ export async function closeTrade(positionId, userId) {
         bid: newBidAsk.bid,
         ask: newBidAsk.ask,
       },
+      _ledger: { walletTransaction, priceHistoryEntry },
     };
+  }).then(async (result) => {
+    const { _ledger, ...publicResult } = result;
+    await appendLedgerEntry("trade", result.trade._id, result.trade.toObject());
+    await appendLedgerEntry(
+      "wallet_transaction",
+      _ledger.walletTransaction._id,
+      _ledger.walletTransaction.toObject()
+    );
+    await appendLedgerEntry(
+      "talent_price_history",
+      _ledger.priceHistoryEntry._id,
+      _ledger.priceHistoryEntry.toObject()
+    );
+    return publicResult;
   });
 }
 
 // ── Statistics / chart data ─────────────────────────────────────────
-export async function getTalentChart(talentId, range) {
+
+const RANGE_CONFIG = {
+  "1D":  { ms: 24 * 60 * 60 * 1000,            bucketMs: 5 * 60 * 1000 },
+  "1W":  { ms: 7 * 24 * 60 * 60 * 1000,        bucketMs: 60 * 60 * 1000 },
+  "1M":  { ms: 30 * 24 * 60 * 60 * 1000,       bucketMs: 4 * 60 * 60 * 1000 },
+  "3M":  { ms: 90 * 24 * 60 * 60 * 1000,       bucketMs: 12 * 60 * 60 * 1000 },
+  "1Y":  { ms: 365 * 24 * 60 * 60 * 1000,      bucketMs: 24 * 60 * 60 * 1000 },
+  "5Y":  { ms: 5 * 365 * 24 * 60 * 60 * 1000,  bucketMs: 7 * 24 * 60 * 60 * 1000 },
+  "10Y": { ms: 10 * 365 * 24 * 60 * 60 * 1000, bucketMs: 30 * 24 * 60 * 60 * 1000 },
+};
+
+export async function getTalentChart(talentId, range, format = "ohlc") {
   const resolved = await resolveTalent(talentId);
   if (!resolved) throw new Error("Talent not found");
   talentId = resolved._id;
 
-  const now = new Date();
-  let start;
+  const cfg = RANGE_CONFIG[range] || RANGE_CONFIG["1D"];
+  const start = new Date(Date.now() - cfg.ms);
 
-  switch (range) {
-    case "1D":
-      start = new Date(now - 24 * 60 * 60 * 1000);
-      break;
-    case "1W":
-      start = new Date(now - 7 * 24 * 60 * 60 * 1000);
-      break;
-    case "1M":
-      start = new Date(now - 30 * 24 * 60 * 60 * 1000);
-      break;
-    case "3M":
-      start = new Date(now - 90 * 24 * 60 * 60 * 1000);
-      break;
-    case "1Y":
-      start = new Date(now - 365 * 24 * 60 * 60 * 1000);
-      break;
-    case "5Y":
-      start = new Date(now - 5 * 365 * 24 * 60 * 60 * 1000);
-      break;
-    case "10Y":
-      start = new Date(now - 10 * 365 * 24 * 60 * 60 * 1000);
-      break;
-    default:
-      start = new Date(now - 24 * 60 * 60 * 1000);
+  if (format === "ohlc") {
+    const candles = await TalentPriceHistory.aggregate([
+      { $match: { talent_id: talentId, recorded_at: { $gte: start } } },
+      { $sort: { recorded_at: 1 } },
+      {
+        $addFields: {
+          priceNum: { $toDouble: "$price" },
+          volumeNum: { $toDouble: "$volume" },
+          bucketTs: {
+            $subtract: [
+              { $toLong: "$recorded_at" },
+              { $mod: [{ $toLong: "$recorded_at" }, cfg.bucketMs] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$bucketTs",
+          open:   { $first: "$priceNum" },
+          high:   { $max:   "$priceNum" },
+          low:    { $min:   "$priceNum" },
+          close:  { $last:  "$priceNum" },
+          volume: { $sum:   "$volumeNum" },
+        },
+      },
+      { $sort: { _id: 1 } },
+      {
+        $project: {
+          _id: 0,
+          // lightweight-charts expects Unix seconds (integer)
+          time:   { $toInt: { $divide: ["$_id", 1000] } },
+          open:   1,
+          high:   1,
+          low:    1,
+          close:  1,
+          volume: 1,
+        },
+      },
+    ]);
+    return candles;
   }
 
+  // Legacy line format (kept for any other consumers)
   const history = await TalentPriceHistory.find({
     talent_id: talentId,
     recorded_at: { $gte: start },

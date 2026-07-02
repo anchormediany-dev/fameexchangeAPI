@@ -1,11 +1,7 @@
 import Product from "../models/productModel.js";
 import mongoose from "mongoose";
-import Stripe from "stripe";
+import stripe from "../services/stripeClient.js";
 import Payment from "../models/paymentModel.js";
-import dotenv from "dotenv";
-dotenv.config();
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // CREATE - Add new product
 export const createProduct = async (req, res) => {
@@ -66,11 +62,12 @@ export const getAllProducts = async (req, res) => {
   try {
     const { page = 1, limit = 10, search = "" } = req.query;
 
-    const query = search
+    const escaped = search ? search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
+    const query = escaped
       ? {
           $or: [
-            { title: { $regex: search, $options: "i" } },
-            { description: { $regex: search, $options: "i" } },
+            { title: { $regex: escaped, $options: "i" } },
+            { description: { $regex: escaped, $options: "i" } },
           ],
         }
       : {};
@@ -318,9 +315,23 @@ export const createProductPaymentIntent = async (req, res) => {
   }
 };
 
-// Stripe webhook for product payments (no signature verification)
+// Stripe webhook for product payments
 export const stripeProductWebhookNoSig = async (req, res) => {
-  const event = req.body;
+  let event;
+  const sig = req.headers["stripe-signature"];
+  const secret = process.env.STRIPE_PRODUCT_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (secret && sig) {
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, secret);
+    } catch (err) {
+      return res.status(400).json({ error: `Webhook signature error: ${err.message}` });
+    }
+  } else if (process.env.NODE_ENV !== "production") {
+    event = req.body;
+  } else {
+    return res.status(400).json({ error: "Missing webhook signature" });
+  }
   // Handle payment_intent events
   if (
     event.type === "payment_intent.succeeded" ||

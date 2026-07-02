@@ -2,13 +2,8 @@ import Wallet from "../models/walletModel.js";
 import WalletTransaction from "../models/walletTransactionModel.js";
 import { getUserPnlSummary } from "../services/tradingService.js";
 import mongoose from "mongoose";
-import Stripe from "stripe";
-import dotenv from "dotenv";
+import stripe from "../services/stripeClient.js";
 import { toMinorUnits } from "../utils/money.js";
-
-dotenv.config();
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
