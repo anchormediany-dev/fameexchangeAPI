@@ -104,6 +104,55 @@ export async function confirmPledge(userId, paymentIntentId) {
   const amount = +(amountInMinor / 100).toFixed(2);
   if (amount <= 0) throw new Error("Invalid PaymentIntent amount");
 
+  // The talent's campaign can graduate or expire between the fan starting
+  // payment (createPledgeIntent) and Stripe confirming it. Money is already
+  // captured by this point, so it has to land somewhere sensible instead of
+  // becoming a "pending" pledge nothing will ever revisit.
+  if (talent.tier === "futures" && talent.futures_closed) {
+    // Campaign already expired/refunded (see refundExpiredFuturesCampaigns)
+    // without this talent graduating — refund this late arrival the same way
+    // the rest of that cohort was refunded.
+    await stripe().refunds.create({ payment_intent: pi.id });
+    const pledge = await FuturesPledge.create({
+      talent_id: talent._id,
+      user_id: userId,
+      amount: D128(amount),
+      bonus_rate: PLEDGE_BONUS_RATE,
+      status: "refunded",
+      stripe_payment_intent_id: pi.id,
+      pledged_at: new Date(),
+      refunded_at: new Date(),
+      refund_reason: "campaign_closed_before_confirmation",
+    });
+    await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
+    await Notification.create({
+      userId,
+      category: "futures",
+      description: `${talent.name}'s Futures campaign closed before your $${amount} pledge could be confirmed. You've been refunded in full.`,
+      referenceModel: "Talent",
+      referenceId: talent._id,
+    });
+    return { already_recorded: false, refunded: true, pledge, talent: talent.toDisplay() };
+  }
+
+  if (talent.tier === "tradeable") {
+    // Talent already graduated before this pledge could be confirmed —
+    // graduation only sweeps pledges that existed at that moment, so honor
+    // this one immediately as a fulfilled position instead of leaving it
+    // "pending" forever.
+    const pledge = await FuturesPledge.create({
+      talent_id: talent._id,
+      user_id: userId,
+      amount: D128(amount),
+      bonus_rate: PLEDGE_BONUS_RATE,
+      status: "pending",
+      stripe_payment_intent_id: pi.id,
+      pledged_at: new Date(),
+    });
+    const fulfillment = await fulfillSinglePledge(pledge, talent);
+    return { already_recorded: false, late_fulfillment: true, pledge, fulfillment, talent: talent.toDisplay() };
+  }
+
   const pledge = await FuturesPledge.create({
     talent_id: talent._id,
     user_id: userId,
@@ -114,8 +163,10 @@ export async function confirmPledge(userId, paymentIntentId) {
     pledged_at: new Date(),
   });
 
-  talent.total_pledged = D128(d(talent.total_pledged) + amount);
-  await talent.save();
+  // Atomic increment — talent.save() on the whole document would race with
+  // concurrent pledges on the same talent and silently drop one's total.
+  await Talent.updateOne({ _id: talent._id }, { $inc: { total_pledged: D128(amount) } });
+  talent.total_pledged = D128(d(talent.total_pledged) + amount); // reflect it in this response only
 
   await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
 
@@ -123,86 +174,97 @@ export async function confirmPledge(userId, paymentIntentId) {
 }
 
 /**
- * Converts every pending pledge for a talent into a real open Position of
- * Branded Talent Shares at the graduation-moment price, with the bonus
- * allocation each pledge locked in at pledge time. Called the moment a
- * futures-tier talent's FameScore crosses the tradeable threshold (see
- * famescoreService.recalculateTalentValuation).
+ * Converts a single pending pledge into a real open Position of Branded
+ * Talent Shares at `talent.current_price`, with the pledge's locked-in bonus
+ * rate applied. Shared by graduateTalentToTradeable's sweep of every pledge
+ * that existed at graduation time, and by confirmPledge's handling of a
+ * pledge that gets confirmed just after graduation already happened.
  *
  * Deliberately bypasses tradingService.openTrade: no wallet debit happens
  * here because the money was already captured via Stripe when the pledge was
  * made. This is a fulfillment of a prior promise, not a new purchase.
  */
-export async function graduateTalentToTradeable(talent) {
-  if (talent.tier !== "futures") return { graduated: false, reason: "not_futures_tier" };
-
-  const pendingPledges = await FuturesPledge.find({ talent_id: talent._id, status: "pending" });
-
-  const { bid } = calcBidAsk(talent.current_price, talent.spread);
+async function fulfillSinglePledge(pledge, talent) {
+  const amount = d(pledge.amount);
+  const bonusMultiplier = 1 + Number(pledge.bonus_rate);
   const graduationPrice = d(talent.current_price);
+  const units = +((amount * bonusMultiplier) / graduationPrice).toFixed(6);
+
+  let wallet = await Wallet.findOne({ userId: pledge.user_id });
+  if (!wallet) {
+    wallet = await Wallet.create({ userId: pledge.user_id, available_balance: D128(0) });
+  }
+
+  const position = await Position.create({
+    user_id: pledge.user_id,
+    talent_id: talent._id,
+    side: "buy",
+    entry_price: D128(graduationPrice),
+    current_price_snapshot: D128(graduationPrice),
+    units: D128(units),
+    invested_amount: D128(amount),
+    status: "open",
+    opened_at: new Date(),
+  });
+
+  const trade = await Trade.create({
+    user_id: pledge.user_id,
+    talent_id: talent._id,
+    position_id: position._id,
+    side: "buy",
+    trade_type: "open",
+    price: D128(graduationPrice),
+    units: D128(units),
+    amount: D128(amount),
+    fees: D128(0),
+    pnl: null,
+    wallet_balance_after: D128(d(wallet.available_balance)),
+  });
+
+  pledge.status = "fulfilled";
+  pledge.fulfilled_at = new Date();
+  pledge.awarded_units = D128(units);
+  pledge.awarded_entry_price = D128(graduationPrice);
+  pledge.position_id = position._id;
+  await pledge.save();
+
+  await appendLedgerEntry("trade", trade._id, trade.toObject());
+  await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
+
+  await Notification.create({
+    userId: pledge.user_id,
+    category: "futures",
+    description: `${talent.name} has graduated to the live market! Your $${amount} early pledge was converted into ${units} Branded Talent Shares (including your ${Math.round(Number(pledge.bonus_rate) * 100)}% early-supporter bonus) at $${graduationPrice}/share.`,
+    referenceModel: "Talent",
+    referenceId: talent._id,
+  });
+
+  return { pledge_id: pledge._id, user_id: pledge.user_id, amount, units, position_id: position._id };
+}
+
+/**
+ * Called the moment a futures-tier talent's FameScore crosses the tradeable
+ * threshold (see famescoreService.recalculateTalentValuation). The tier flip
+ * is claimed atomically (findOneAndUpdate filtered on tier:"futures") so that
+ * two overlapping callers — the nightly cron and an admin "run now" click,
+ * say — can't both pass the pre-check and double-fulfill the same pledges.
+ * Only the caller that wins the atomic claim proceeds; the other sees
+ * tier no longer "futures" and bails out immediately.
+ */
+export async function graduateTalentToTradeable(talent) {
+  const claimed = await Talent.findOneAndUpdate(
+    { _id: talent._id, tier: "futures" },
+    { $set: { tier: "tradeable", futures_closed: true, graduated_at: new Date() } }
+  );
+  if (!claimed) return { graduated: false, reason: "not_futures_tier" };
+
+  const pendingPledges = await FuturesPledge.find({ talent_id: claimed._id, status: "pending" });
+  const { bid } = calcBidAsk(claimed.current_price, claimed.spread);
 
   const fulfillments = [];
   for (const pledge of pendingPledges) {
-    const amount = d(pledge.amount);
-    const bonusMultiplier = 1 + Number(pledge.bonus_rate);
-    const units = +((amount * bonusMultiplier) / graduationPrice).toFixed(6);
-
-    let wallet = await Wallet.findOne({ userId: pledge.user_id });
-    if (!wallet) {
-      wallet = await Wallet.create({ userId: pledge.user_id, available_balance: D128(0) });
-    }
-
-    const position = await Position.create({
-      user_id: pledge.user_id,
-      talent_id: talent._id,
-      side: "buy",
-      entry_price: D128(graduationPrice),
-      current_price_snapshot: D128(graduationPrice),
-      units: D128(units),
-      invested_amount: D128(amount),
-      status: "open",
-      opened_at: new Date(),
-    });
-
-    const trade = await Trade.create({
-      user_id: pledge.user_id,
-      talent_id: talent._id,
-      position_id: position._id,
-      side: "buy",
-      trade_type: "open",
-      price: D128(graduationPrice),
-      units: D128(units),
-      amount: D128(amount),
-      fees: D128(0),
-      pnl: null,
-      wallet_balance_after: D128(d(wallet.available_balance)),
-    });
-
-    pledge.status = "fulfilled";
-    pledge.fulfilled_at = new Date();
-    pledge.awarded_units = D128(units);
-    pledge.awarded_entry_price = D128(graduationPrice);
-    pledge.position_id = position._id;
-    await pledge.save();
-
-    await appendLedgerEntry("trade", trade._id, trade.toObject());
-    await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
-
-    await Notification.create({
-      userId: pledge.user_id,
-      category: "futures",
-      description: `${talent.name} has graduated to the live market! Your $${amount} early pledge was converted into ${units} Branded Talent Shares (including your ${Math.round(Number(pledge.bonus_rate) * 100)}% early-supporter bonus) at $${graduationPrice}/share.`,
-      referenceModel: "Talent",
-      referenceId: talent._id,
-    });
-
-    fulfillments.push({ pledge_id: pledge._id, user_id: pledge.user_id, amount, units, position_id: position._id });
+    fulfillments.push(await fulfillSinglePledge(pledge, claimed));
   }
-
-  talent.tier = "tradeable";
-  talent.futures_closed = true;
-  talent.graduated_at = new Date();
-  await talent.save();
 
   return { graduated: true, fulfillments, bid_at_graduation: bid };
 }

@@ -99,8 +99,8 @@ export const simulatePledge = async (req, res) => {
       // no stripe_payment_intent_id — this is the simulated/no-payment path
     });
 
-    talent.total_pledged = D128(d(talent.total_pledged) + amt);
-    await talent.save();
+    await Talent.updateOne({ _id: talent._id }, { $inc: { total_pledged: D128(amt) } });
+    talent.total_pledged = D128(d(talent.total_pledged) + amt); // reflect it in this response only
 
     await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
 

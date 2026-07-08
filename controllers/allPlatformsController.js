@@ -14,6 +14,22 @@ const platformHandlers = {
   snapchat: { fn: getSnapchatSubscribers, key: "subscribers" },
 };
 
+// Individual scrapers (e.g. Twitter's puppeteer waitForSelector) can hang for
+// minutes if a platform rate-limits/blocks the headless session. Since every
+// platform request already runs concurrently via Promise.all below, capping
+// each one here bounds the WHOLE request to this ceiling instead of to
+// whatever the slowest scraper's own internal timeout happens to be.
+const PLATFORM_TIMEOUT_MS = 20000;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} scrape timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 export const getAllPlatformsData = async (urls = {}) => {
   // This helper is invoked from the talent / networth flow. It must NEVER throw
   // because we still want to persist the talent's social profile URLs even if
@@ -46,7 +62,7 @@ export const getAllPlatformsData = async (urls = {}) => {
                 : {},
           };
 
-          await fn(mockReq, mockRes);
+          await withTimeout(fn(mockReq, mockRes), PLATFORM_TIMEOUT_MS, platform);
 
           // Try multiple shapes that the various scrapers may return.
           let raw =

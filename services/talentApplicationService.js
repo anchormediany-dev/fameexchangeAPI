@@ -7,6 +7,7 @@ import { calcBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { MIN_FAMESCORE_TRADEABLE } from "../config/futuresConfig.js";
 import { FRONTEND_PUBLIC_URL } from "../config/socialAuthConfig.js";
+import { createFamefuturesHandoffToken } from "./famefuturesHandoff.js";
 
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
@@ -62,7 +63,7 @@ async function uniqueSymbol(base) {
 export async function applyToBeTalent(user) {
   const existing = await Talent.findOne({ userId: user._id });
   if (existing) {
-    return buildResult(existing, { alreadyApplied: true });
+    return buildResult(existing, user, { alreadyApplied: true });
   }
 
   const minPrice = 1.0;
@@ -106,18 +107,26 @@ export async function applyToBeTalent(user) {
   });
   await appendLedgerEntry("talent_price_history", priceHistoryEntry._id, priceHistoryEntry.toObject());
 
-  return buildResult(talent, { alreadyApplied: false });
+  return buildResult(talent, user, { alreadyApplied: false });
 }
 
-async function buildResult(talent, { alreadyApplied }) {
+async function buildResult(talent, user, { alreadyApplied }) {
   const isTradeable = talent.tier === "tradeable";
   const message = isTradeable
     ? `Congratulations! Your FameScore (${talent.fame_score}) qualifies you as a tradeable Branded Talent Share on Fame Exchange. Fans can now buy and sell shares of your value.`
     : `Congratulations! You've been recognized as a Future on Fame Exchange — your current social reach (FameScore ${talent.fame_score}) is on its way, and early supporters can now back you before you go fully tradeable.`;
 
-  const redirectUrl = isTradeable
-    ? `${FRONTEND_PUBLIC_URL}/talent-profile/${talent._id}`
-    : FAMEFUTURES_URL;
+  let redirectUrl;
+  if (isTradeable) {
+    redirectUrl = `${FRONTEND_PUBLIC_URL}/talent-profile/${talent._id}`;
+  } else {
+    // Best-effort SSO handoff so they land on famefutures.com already
+    // identified — falls back to a plain link if the shared secret isn't
+    // configured yet (famefutures.com is a separate deployment, may not have
+    // rolled out its side of this yet).
+    const handoffToken = createFamefuturesHandoffToken(user, talent);
+    redirectUrl = handoffToken ? `${FAMEFUTURES_URL}/sso?token=${handoffToken}` : FAMEFUTURES_URL;
+  }
 
   if (!alreadyApplied) {
     await Notification.create({
