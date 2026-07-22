@@ -11,29 +11,47 @@ import {
 } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { graduateTalentToTradeable } from "./futuresPledgeService.js";
-import { MIN_FAMESCORE_TRADEABLE } from "../config/futuresConfig.js";
+import { writeSocialSnapshots, computeGrowthRate } from "./socialSnapshotService.js";
 import {
-  PLATFORM_WEIGHT,
-  VERIFICATION_MULTIPLIER,
-  PLATFORM_REFERENCE_FOLLOWERS,
+  platformMultiplierMidpoint,
+  QUALIFICATION_THRESHOLDS,
+  SINGLE_PLATFORM_QUALIFICATION,
+  MONETIZATION_BENCHMARK_MONTHLY,
+  GROWTH_BONUS,
+  VERIFIED_BONUS,
+  MULTI_PLATFORM_BONUS_3PLUS,
+  MULTI_PLATFORM_BONUS_2,
+  DEFAULT_ENGAGEMENT_RATE_BY_PLATFORM,
+  DEFAULT_ENGAGEMENT_RATE_FALLBACK,
+  RE_EVALUATION_DAYS,
   FAMESCORE_MAX,
   PRICE_CURVE_EXPONENT,
   REMARK_DAMPING_FACTOR,
-  PRIMARY_WEIGHT,
-  SECONDARY_WEIGHT,
 } from "../config/famescoreConfig.js";
+import { GRACE_PERIOD_DAYS } from "../config/feeConfig.js";
 
 const d = (v) => parseFloat(v?.toString?.() ?? v ?? 0);
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
+function defaultEngagementRate(platform) {
+  return DEFAULT_ENGAGEMENT_RATE_BY_PLATFORM[platform] ?? DEFAULT_ENGAGEMENT_RATE_FALLBACK;
+}
+
 /**
- * Gathers a talent's social signal from BOTH sources we have:
- *  - SocialConnection: OAuth-verified, platform-API-sourced follower counts.
- *  - Networth: legacy public-scrape-derived follower counts (fallback only,
- *    and only for platforms not already covered by a verified connection).
+ * Gathers a talent's social signal from BOTH sources we have — OAuth-
+ * verified SocialConnection (real engagement data where obtainable, today
+ * only YouTube — see services/socialProviders/youtube.js) and legacy
+ * scraped Networth (fallback only, follower-count-only, never "measured"
+ * engagement) — in the PlatformMetrics[] shape calculateFameScore() expects.
+ *
+ * Pass `talentId` when this is a REAL recalculation (an existing Talent) so
+ * growth rate can be computed against snapshot history (see
+ * socialSnapshotService.js). Omit it for a preview/first-time call (no
+ * Talent exists yet) — growthRate comes back null for every platform, which
+ * calculateFameScore() treats as "no growth signal," not silently as 0%.
  */
-async function collectSocialSignal(userId) {
-  const signal = {}; // platform -> { followers, verified }
+async function collectSocialSignal(userId, talentId = null) {
+  const platforms = new Map(); // platform -> PlatformMetrics
 
   if (userId) {
     const connections = await SocialConnection.find({
@@ -42,73 +60,164 @@ async function collectSocialSignal(userId) {
     }).lean();
 
     for (const c of connections) {
-      if (Number(c.followers) > 0) {
-        signal[c.platform] = { followers: Number(c.followers), verified: true };
-      }
+      if (!(Number(c.followers) > 0)) continue;
+      platforms.set(c.platform, {
+        platform: c.platform,
+        followers: Number(c.followers),
+        engagementRate: c.engagementRate ?? defaultEngagementRate(c.platform),
+        engagementRateSource: c.engagementRate != null ? "measured" : "platform_default_estimate",
+        avgViewsPerPost: c.avgViewsPerPost ?? null,
+        verified: true,
+        growthRate: null, // filled in below if talentId is provided
+      });
     }
 
     const legacy = await Networth.findOne({ userId }).lean();
     if (legacy?.socialMedia) {
       for (const [platform, data] of Object.entries(legacy.socialMedia)) {
-        if (signal[platform]) continue; // verified connection already covers it
+        if (platforms.has(platform)) continue; // verified connection already covers it
         const count = Number(data?.followers ?? data?.subscribers ?? 0);
-        if (count > 0) signal[platform] = { followers: count, verified: false };
+        if (count <= 0) continue;
+        platforms.set(platform, {
+          platform,
+          followers: count,
+          engagementRate: defaultEngagementRate(platform),
+          engagementRateSource: "platform_default_estimate", // legacy scraper never measures engagement
+          avgViewsPerPost: null,
+          verified: false,
+          growthRate: null,
+        });
       }
     }
   }
 
-  return signal;
+  if (talentId) {
+    await Promise.all(
+      Array.from(platforms.values()).map(async (p) => {
+        p.growthRate = await computeGrowthRate(talentId, p.platform, p.followers);
+      })
+    );
+  }
+
+  return Array.from(platforms.values());
 }
 
 /**
- * Core proprietary scoring function.
+ * Core proprietary scoring function (v2). Estimates monthly monetization
+ * value per platform (followers x engagement rate x per-platform revenue
+ * multiplier), sums it, and normalizes against a $50K/mo benchmark into a
+ * 0-100 score, plus growth/verified/multi-platform bonuses.
  *
- * Each connected platform is scored 0-1 (log-scaled against that platform's
- * reference ceiling, weighted, and discounted if unverified). FameScore is
- * then the talent's STRONGEST platform score, plus a smaller bonus for
- * presence on additional platforms — deliberately NOT an average/sum across
- * every platform at once, since that would make it mathematically impossible
- * for a genuine single-platform mega-creator (e.g. 20M YouTube subscribers,
- * nothing else) to ever score highly. Fame is dominated by your biggest
- * platform; being multi-platform is a bonus on top, not a requirement.
+ * Qualification is evaluated SEPARATELY from the score via two independent
+ * paths — either qualifies:
+ *  (a) the standard multi-platform aggregate gate (QUALIFICATION_THRESHOLDS), or
+ *  (b) a single platform, on its own, clearing a meaningfully higher bar
+ *      (SINGLE_PLATFORM_QUALIFICATION) — so a genuine single-platform
+ *      mega-creator isn't blocked purely by minPlatforms.
  */
-export function computeFameScoreFromSignal(signal) {
-  const breakdown = {};
-  const platformScores = [];
+export function calculateFameScore(platforms) {
+  const input = Array.isArray(platforms) ? platforms : [];
 
-  for (const [platform, { followers, verified }] of Object.entries(signal)) {
-    const weight = PLATFORM_WEIGHT[platform];
-    const reference = PLATFORM_REFERENCE_FOLLOWERS[platform];
-    if (!weight || !reference) continue; // unknown platform key, ignore defensively
-
-    const verificationMultiplier = verified
-      ? VERIFICATION_MULTIPLIER.oauth_verified
-      : VERIFICATION_MULTIPLIER.scraped_unverified;
-
-    const ratio = Math.log10(followers + 1) / Math.log10(reference + 1);
-    const platformScore = Math.min(1, weight * verificationMultiplier * ratio);
-
-    platformScores.push(platformScore);
-    breakdown[platform] = {
+  // STEP 1 — per-platform monetization value.
+  const perPlatform = input.map((p) => {
+    const followers = Math.max(0, Number(p.followers) || 0);
+    const engagementRate = Math.max(0, Number(p.engagementRate) || 0);
+    const multiplier = platformMultiplierMidpoint(p.platform);
+    const value = followers * engagementRate * multiplier;
+    return {
+      platform: p.platform,
       followers,
-      verified,
-      weight,
-      verification_multiplier: verificationMultiplier,
-      platform_score: +platformScore.toFixed(4),
+      engagementRate,
+      engagementRateSource: p.engagementRateSource,
+      value,
+      verified: !!p.verified,
+      growthRate: typeof p.growthRate === "number" ? p.growthRate : null,
     };
+  });
+
+  // STEP 2 — aggregate.
+  const totalMonetizationValue = perPlatform.reduce((sum, p) => sum + p.value, 0);
+  const totalFollowers = perPlatform.reduce((sum, p) => sum + p.followers, 0);
+  const avgEngagementRate = totalFollowers > 0
+    ? perPlatform.reduce((sum, p) => sum + p.engagementRate * p.followers, 0) / totalFollowers
+    : 0;
+  const platformCount = perPlatform.length;
+  const hasGrowth = perPlatform.some((p) => (p.growthRate ?? 0) > 0);
+  const hasVerified = perPlatform.some((p) => p.verified);
+
+  const platformBreakdown = perPlatform.map((p) => ({
+    platform: p.platform,
+    followers: p.followers,
+    engagementRate: p.engagementRate,
+    growthRate: p.growthRate,
+    verified: p.verified,
+    value: +p.value.toFixed(2),
+    contribution: totalMonetizationValue > 0 ? +((p.value / totalMonetizationValue) * 100).toFixed(1) : 0,
+    ...(p.engagementRateSource ? { engagementRateSource: p.engagementRateSource } : {}),
+  }));
+
+  // STEP 3 — score (0-100).
+  let score = Math.min(100, (totalMonetizationValue / MONETIZATION_BENCHMARK_MONTHLY) * 100);
+  if (hasGrowth) score += GROWTH_BONUS;
+  if (hasVerified) score += VERIFIED_BONUS;
+  if (platformCount >= 3) score += MULTI_PLATFORM_BONUS_3PLUS;
+  else if (platformCount === 2) score += MULTI_PLATFORM_BONUS_2;
+  score = Math.min(100, score);
+  const fameScore = +score.toFixed(1);
+
+  // STEP 4 — qualification (two independent paths).
+  const { minTotalFollowers, minEngagementRate, minPlatforms, requireGrowthTrend } = QUALIFICATION_THRESHOLDS;
+  const growthOk = !requireGrowthTrend || hasGrowth;
+
+  const misses = [];
+  if (totalFollowers < minTotalFollowers) {
+    misses.push(`Below ${minTotalFollowers.toLocaleString()} total followers (currently ${totalFollowers.toLocaleString()})`);
+  }
+  if (avgEngagementRate < minEngagementRate) {
+    misses.push(`Below ${(minEngagementRate * 100).toFixed(0)}% average engagement rate (currently ${(avgEngagementRate * 100).toFixed(1)}%)`);
+  }
+  if (platformCount < minPlatforms) {
+    misses.push(`Need ${minPlatforms}+ platforms (currently ${platformCount})`);
+  }
+  if (!growthOk) {
+    misses.push("No positive growth trend detected");
+  }
+  const qualifiesViaMultiPlatform = misses.length === 0;
+
+  const dominantPlatform = perPlatform.find(
+    (p) => p.followers >= SINGLE_PLATFORM_QUALIFICATION.minFollowers && p.engagementRate >= SINGLE_PLATFORM_QUALIFICATION.minEngagementRate
+  );
+  const qualifiesViaSinglePlatform = !!dominantPlatform && growthOk;
+
+  const qualified = qualifiesViaMultiPlatform || qualifiesViaSinglePlatform;
+
+  let qualificationReason;
+  if (qualifiesViaMultiPlatform) {
+    qualificationReason = "Meets all qualification thresholds for tradeable asset listing";
+  } else if (qualifiesViaSinglePlatform) {
+    qualificationReason = `Qualifies via single-platform dominance on ${dominantPlatform.platform} (${dominantPlatform.followers.toLocaleString()} followers, ${(dominantPlatform.engagementRate * 100).toFixed(1)}% engagement)`;
+  } else {
+    const singleFollowers = SINGLE_PLATFORM_QUALIFICATION.minFollowers.toLocaleString();
+    const singleEngagement = (SINGLE_PLATFORM_QUALIFICATION.minEngagementRate * 100).toFixed(0);
+    qualificationReason = `${misses.join(". ")}. Or reach ${singleFollowers}+ followers with ${singleEngagement}%+ engagement on a single platform.`;
   }
 
-  platformScores.sort((a, b) => b - a);
-  const primary = platformScores[0] || 0;
-  const secondary = platformScores.slice(1);
-  const secondaryAvg = secondary.length
-    ? secondary.reduce((sum, s) => sum + s, 0) / secondary.length
-    : 0;
+  // STEP 5 — recommendation.
+  const recommendation = qualified ? "tradeable_asset" : "famefutures_routing";
 
-  const combined = primary * PRIMARY_WEIGHT + secondaryAvg * SECONDARY_WEIGHT;
-  const fameScore = Math.max(0, Math.min(FAMESCORE_MAX, Math.round(combined * FAMESCORE_MAX)));
-
-  return { fameScore, breakdown, primary: +primary.toFixed(4), secondaryAvg: +secondaryAvg.toFixed(4) };
+  return {
+    fameScore,
+    qualified,
+    qualificationReason,
+    platformBreakdown,
+    estimatedMonetizationValue: +totalMonetizationValue.toFixed(2),
+    recommendation,
+    totalFollowers,
+    avgEngagementRate: +avgEngagementRate.toFixed(4),
+    platformCount,
+    hasGrowth,
+    hasVerified,
+  };
 }
 
 /**
@@ -126,13 +235,21 @@ export function priceFromFameScore(fameScore, minPrice, maxPrice) {
 /**
  * Computes a talent's current FameScore + suggested price WITHOUT writing
  * anything — used to preview a valuation before listing a talent, or to
- * inspect what a re-mark would do.
+ * inspect what a re-mark would do. No talentId yet at this point (no Talent
+ * exists), so growthRate naturally comes back null for every platform.
  */
 export async function previewValuation(userId, minPrice = 1.0, maxPrice = 100000) {
   const signal = await collectSocialSignal(userId);
-  const { fameScore, breakdown, primary, secondaryAvg } = computeFameScoreFromSignal(signal);
-  const suggestedPrice = priceFromFameScore(fameScore, minPrice, maxPrice);
-  return { fameScore, breakdown, primary, secondaryAvg, suggestedPrice };
+  const scoreResult = calculateFameScore(signal);
+  const suggestedPrice = priceFromFameScore(scoreResult.fameScore, minPrice, maxPrice);
+  return {
+    fameScore: scoreResult.fameScore,
+    breakdown: scoreResult.platformBreakdown,
+    qualified: scoreResult.qualified,
+    qualificationReason: scoreResult.qualificationReason,
+    estimatedMonetizationValue: scoreResult.estimatedMonetizationValue,
+    suggestedPrice,
+  };
 }
 
 /**
@@ -140,7 +257,9 @@ export async function previewValuation(userId, minPrice = 1.0, maxPrice = 100000
  * social signal, then nudges current_price a damped fraction of the way
  * toward the new fundamental-value target — passed through the trading
  * engine's existing max-move-per-trade / daily-limit / min-max clamps so a
- * follower-count change can never shock the live tradable price.
+ * follower-count change can never shock the live tradable price. Writes a
+ * social snapshot afterward (a REAL recalculation, unlike previewValuation)
+ * so future growth-rate math has history to compare against.
  */
 export async function recalculateTalentValuation(talentId) {
   const talent = await Talent.findById(talentId);
@@ -149,8 +268,9 @@ export async function recalculateTalentValuation(talentId) {
     throw new Error("Auto-pricing is disabled for this talent");
   }
 
-  const signal = await collectSocialSignal(talent.userId);
-  const { fameScore, breakdown } = computeFameScoreFromSignal(signal);
+  const signal = await collectSocialSignal(talent.userId, talent._id);
+  const scoreResult = calculateFameScore(signal);
+  const fameScore = scoreResult.fameScore;
 
   const targetPrice = priceFromFameScore(fameScore, d(talent.min_price), d(talent.max_price));
   const currentPrice = d(talent.current_price);
@@ -166,9 +286,46 @@ export async function recalculateTalentValuation(talentId) {
   talent.bid_price = D128(bid);
   talent.ask_price = D128(ask);
   talent.fame_score = fameScore;
-  talent.fame_score_breakdown = breakdown;
+  talent.fame_score_breakdown = scoreResult.platformBreakdown;
   talent.fame_score_updated_at = new Date();
+  talent.qualified = scoreResult.qualified;
+  talent.qualification_reason = scoreResult.qualificationReason;
+  talent.estimated_monetization_value = D128(scoreResult.estimatedMonetizationValue);
+  talent.next_re_evaluation_at = new Date(Date.now() + RE_EVALUATION_DAYS * 24 * 60 * 60 * 1000);
+
+  // Demotion + grace period — only applies to an already-tradeable talent.
+  // A futures-tier talent failing qualification just stays futures (handled
+  // by the graduation check below); there's no "demotion" for something
+  // that was never promoted.
+  if (talent.tier === "tradeable") {
+    if (!scoreResult.qualified) {
+      if (!talent.qualification_grace_started_at) {
+        talent.qualification_grace_started_at = new Date();
+      } else {
+        const graceDeadline = new Date(
+          talent.qualification_grace_started_at.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+        );
+        if (Date.now() >= graceDeadline.getTime() && talent.status === "active") {
+          // Suspends new opens for free (getQuote/previewTrade/openTrade all
+          // reject non-"active" status) — existing holders can still close.
+          // tier stays "tradeable" (frozen, not routed back into a new
+          // Futures pledge campaign).
+          talent.status = "suspended";
+        }
+      }
+    } else if (talent.qualification_grace_started_at) {
+      // Requalified within the grace window — clear the timer, and
+      // reactivate if they'd already been suspended.
+      talent.qualification_grace_started_at = null;
+      if (talent.status === "suspended") {
+        talent.status = "active";
+      }
+    }
+  }
+
   await talent.save();
+
+  await writeSocialSnapshots(talent._id, talent.userId, signal);
 
   const priceHistoryEntry = await TalentPriceHistory.create({
     talent_id: talent._id,
@@ -186,14 +343,16 @@ export async function recalculateTalentValuation(talentId) {
   );
 
   let graduation = null;
-  if (talent.tier === "futures" && fameScore >= MIN_FAMESCORE_TRADEABLE) {
+  if (talent.tier === "futures" && scoreResult.qualified) {
     graduation = await graduateTalentToTradeable(talent);
   }
 
   return {
     talent_id: talent._id,
     fame_score: fameScore,
-    breakdown,
+    breakdown: scoreResult.platformBreakdown,
+    qualified: scoreResult.qualified,
+    qualification_reason: scoreResult.qualificationReason,
     graduation,
     previous_price: currentPrice,
     target_price: targetPrice,

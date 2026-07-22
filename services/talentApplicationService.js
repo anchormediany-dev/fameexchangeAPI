@@ -5,7 +5,10 @@ import Notification from "../models/notificationModel.js";
 import { previewValuation } from "./famescoreService.js";
 import { calcBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
-import { MIN_FAMESCORE_TRADEABLE } from "../config/futuresConfig.js";
+import { computeShareAllocation } from "./shareAllocationService.js";
+import { recordRevenueEvent } from "./revenueTrackerService.js";
+import { calculateListingFee } from "../config/feeConfig.js";
+import { RE_EVALUATION_DAYS } from "../config/famescoreConfig.js";
 import { FRONTEND_PUBLIC_URL } from "../config/socialAuthConfig.js";
 import { createFamefuturesHandoffToken } from "./famefuturesHandoff.js";
 
@@ -75,8 +78,16 @@ export async function applyToBeTalent(user) {
   const baseSymbol = symbolize(user.name || "TLNT");
   const symbol = await uniqueSymbol(baseSymbol);
 
-  const tier = preview.fameScore >= MIN_FAMESCORE_TRADEABLE ? "tradeable" : "futures";
+  const tier = preview.qualified ? "tradeable" : "futures";
   const { bid, ask } = calcBidAsk(preview.suggestedPrice, 0.5);
+
+  // A futures-tier talent gets its share supply sized later, at graduation
+  // (see futuresPledgeService.graduateTalentToTradeable) — not here, since
+  // "futures" isn't tradeable yet and estimatedMonetizationValue will likely
+  // be different (hopefully higher) by the time they actually qualify.
+  const shareAllocation = tier === "tradeable"
+    ? computeShareAllocation(preview.estimatedMonetizationValue)
+    : null;
 
   const talent = await Talent.create({
     userId: user._id,
@@ -92,8 +103,20 @@ export async function applyToBeTalent(user) {
     fame_score: preview.fameScore,
     fame_score_breakdown: preview.breakdown,
     fame_score_updated_at: new Date(),
+    qualified: preview.qualified,
+    qualification_reason: preview.qualificationReason,
+    estimated_monetization_value: D128(preview.estimatedMonetizationValue),
+    next_re_evaluation_at: new Date(Date.now() + RE_EVALUATION_DAYS * 24 * 60 * 60 * 1000),
     tier,
     futures_started_at: tier === "futures" ? new Date() : null,
+    ...(shareAllocation
+      ? {
+          total_shares: shareAllocation.totalShares,
+          shares_in_liquidity_pool: shareAllocation.sharesInLiquidityPool,
+          shares_available_in_pool: shareAllocation.sharesInLiquidityPool,
+          initial_share_price: D128(shareAllocation.initialSharePrice),
+        }
+      : {}),
   });
 
   const priceHistoryEntry = await TalentPriceHistory.create({
@@ -107,14 +130,27 @@ export async function applyToBeTalent(user) {
   });
   await appendLedgerEntry("talent_price_history", priceHistoryEntry._id, priceHistoryEntry.toObject());
 
+  // Listing fee — charged exactly once, only if tradeable right away
+  // (a futures-tier talent gets charged later, at graduation, if it ever
+  // happens — never for simply applying).
+  if (tier === "tradeable") {
+    const listingFee = calculateListingFee(preview.estimatedMonetizationValue);
+    await recordRevenueEvent({
+      event_type: "listing_fee",
+      amount: listingFee,
+      talent_id: talent._id,
+      notes: "immediate_qualification",
+    });
+  }
+
   return buildResult(talent, user, { alreadyApplied: false });
 }
 
 async function buildResult(talent, user, { alreadyApplied }) {
   const isTradeable = talent.tier === "tradeable";
   const message = isTradeable
-    ? `Congratulations! Your FameScore (${talent.fame_score}) qualifies you as a tradeable Branded Talent Share on Fame Exchange. Fans can now buy and sell shares of your value.`
-    : `Congratulations! You've been recognized as a Future on Fame Exchange — your current social reach (FameScore ${talent.fame_score}) is on its way, and early supporters can now back you before you go fully tradeable.`;
+    ? `Congratulations! Your FameScore (${talent.fame_score}/100) qualifies you as a tradeable Branded Talent Share on Fame Exchange. Fans can now buy and sell shares of your value.`
+    : `Congratulations! You've been recognized as a Future on Fame Exchange — your current social reach (FameScore ${talent.fame_score}/100) is on its way, and early supporters can now back you before you go fully tradeable.`;
 
   let redirectUrl;
   if (isTradeable) {

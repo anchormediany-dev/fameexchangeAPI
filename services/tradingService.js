@@ -9,13 +9,35 @@ import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import { resolveTalent } from "./talentResolver.js";
 import { appendLedgerEntry } from "./ledgerService.js";
+import { recordRevenueEvent } from "./revenueTrackerService.js";
+import { MARKET_MAKING } from "../config/marketMakingConfig.js";
+import {
+  TRANSACTION_FEE_PERCENT,
+  LAUNCH_PROMO_DAYS,
+  LAUNCH_PROMO_FEE_PERCENT,
+} from "../config/feeConfig.js";
 
 const d = (v) => parseFloat(v?.toString?.() ?? v ?? 0);
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
 // ── Fee config ──────────────────────────────────────────────────────
-const FEE_RATE = 0.005; // 0.5%
 const QUOTE_EXPIRY_SECONDS = 10;
+
+/**
+ * 0% for LAUNCH_PROMO_DAYS from whichever date this talent actually became
+ * tradeable (graduated_at if it was ever futures-tier, else createdAt),
+ * TRANSACTION_FEE_PERCENT after that. Replaces the old flat FEE_RATE with
+ * no promo window.
+ */
+function getTransactionFee(amount, talent) {
+  const anchor = talent.graduated_at || talent.createdAt;
+  const promoEndsAt = anchor
+    ? new Date(new Date(anchor).getTime() + LAUNCH_PROMO_DAYS * 24 * 60 * 60 * 1000)
+    : null;
+  const inPromo = promoEndsAt ? Date.now() < promoEndsAt.getTime() : false;
+  const rate = inPromo ? LAUNCH_PROMO_FEE_PERCENT : TRANSACTION_FEE_PERCENT;
+  return +(amount * rate).toFixed(2);
+}
 
 // Dynamic bid/ask spread configuration.
 // The spread scales with the talent's price so each talent quotes its own bid/ask.
@@ -44,7 +66,16 @@ function calcBidAsk(currentPrice, spread) {
   };
 }
 
-export { calcBidAsk, effectiveSpread, clampPrice, enforceMaxMovePerTrade, enforceDailyLimit };
+export {
+  calcBidAsk,
+  effectiveSpread,
+  clampPrice,
+  enforceMaxMovePerTrade,
+  enforceDailyLimit,
+  calcPoolBidAsk,
+  calcPoolPriceImpact,
+  getTransactionFee,
+};
 
 // ── Optional transaction helper ─────────────────────────────────────
 // MongoDB multi-document transactions require a replica set / mongos.
@@ -81,12 +112,56 @@ async function withOptionalTransaction(fn) {
   }
 }
 
-function calcMarketImpact(amount, liquidityFactor, volatilityMultiplier) {
-  const a = d(amount);
-  const lf = d(liquidityFactor);
-  const vm = d(volatilityMultiplier);
-  if (lf === 0) return 0;
-  return +((a / lf) * vm).toFixed(4);
+// ── Discrete-share liquidity pool pricing ──────────────────────────
+// Real market-making off the talent's actual pool inventory. This replaced
+// an earlier synthetic liquidity_factor/volatility_multiplier-based price-
+// impact model (calcMarketImpact, removed — confirmed unused by any live
+// call site once every talent reaching the trade path has a real share
+// allocation). Falls back to the flat calcBidAsk above for a talent with no
+// pool yet (shouldn't happen for anything reaching the live trade path, but
+// this avoids a divide-by-zero rather than silently mispricing).
+
+/**
+ * Asymmetric bid/ask based on how depleted the liquidity pool is.
+ * utilization: 0 = full pool (nothing bought yet), 1 = empty pool (nothing
+ * left to sell to buyers). Spread widens from MARKET_MAKING.spreadPercent
+ * (full pool) toward maxSpreadPercent (empty pool), and the quoted midpoint
+ * skews upward as the pool depletes — discourages further buying (raises
+ * the ask more) while still attracting sellers back into the pool (raises
+ * the bid too, just less steeply).
+ */
+function calcPoolBidAsk(currentPrice, talent) {
+  const p = d(currentPrice);
+  const poolSize = Number(talent.shares_in_liquidity_pool) || 0;
+  if (poolSize <= 0) return calcBidAsk(p, talent.spread);
+
+  const poolAvailable = talent.shares_available_in_pool != null
+    ? Number(talent.shares_available_in_pool)
+    : poolSize;
+  const utilization = 1 - Math.max(0, Math.min(1, poolAvailable / poolSize));
+
+  const spreadPct = MARKET_MAKING.spreadPercent
+    + (MARKET_MAKING.maxSpreadPercent - MARKET_MAKING.spreadPercent) * utilization;
+  const halfSpread = (p * spreadPct) / 2;
+  const skew = halfSpread * utilization;
+
+  return {
+    bid: +(p - halfSpread + skew * 0.5).toFixed(4),
+    ask: +(p + halfSpread + skew).toFixed(4),
+  };
+}
+
+/**
+ * Price impact driven by real pool depth: what fraction of the liquidity
+ * pool's total inventory this trade's units represent, rather than the old
+ * synthetic amount/liquidity_factor divisor.
+ */
+function calcPoolPriceImpact(unitsTraded, talent) {
+  const poolSize = Number(talent.shares_in_liquidity_pool) || 0;
+  if (poolSize <= 0) return 0;
+  const p = d(talent.current_price);
+  const fractionOfPool = unitsTraded / poolSize;
+  return +(p * fractionOfPool).toFixed(4);
 }
 
 function clampPrice(newPrice, talent) {
@@ -122,7 +197,7 @@ export async function getQuote(talentId) {
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
   if (talent.tier === "futures") throw new Error("Talent is in the Futures tier and is not yet tradeable");
 
-  const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+  const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
   return {
     talent_id: talent._id,
     current_price: d(talent.current_price),
@@ -141,11 +216,18 @@ export async function previewTrade(userId, talentId, side, amount) {
   if (talent.status !== "active") throw new Error("Talent is not active for trading");
   if (talent.tier === "futures") throw new Error("Talent is in the Futures tier and is not yet tradeable");
 
-  const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+  const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
   const entryPrice = side === "buy" ? ask : bid;
-  const units = +(amount / entryPrice).toFixed(6);
-  const fee = +(amount * FEE_RATE).toFixed(2);
-  const totalRequired = +(amount + fee).toFixed(2);
+  // Whole shares only — this may buy slightly less than the requested
+  // dollar amount; the actual amount charged is recomputed from the
+  // floored share count, not the originally-requested amount.
+  const units = Math.floor(amount / entryPrice);
+  const actualAmount = +(units * entryPrice).toFixed(2);
+  const fee = getTransactionFee(actualAmount, talent);
+  const totalRequired = +(actualAmount + fee).toFixed(2);
+
+  const poolAvailable = talent.shares_available_in_pool != null ? Number(talent.shares_available_in_pool) : null;
+  const poolCanCover = poolAvailable == null || units <= poolAvailable;
 
   const wallet = await Wallet.findOne({ userId });
   const walletBalance = wallet ? d(wallet.available_balance) : 0;
@@ -156,10 +238,13 @@ export async function previewTrade(userId, talentId, side, amount) {
     side,
     entry_price: entryPrice,
     estimated_units: units,
+    requested_amount: amount,
+    actual_amount: actualAmount,
     fee,
     total_required: totalRequired,
     wallet_balance: walletBalance,
-    can_execute: walletBalance >= totalRequired,
+    pool_available: poolAvailable,
+    can_execute: units >= 1 && poolCanCover && walletBalance >= totalRequired,
     quote_expires_in_seconds: QUOTE_EXPIRY_SECONDS,
   };
 }
@@ -193,7 +278,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     if (amount > maxOrder) throw new Error(`Maximum order amount is $${maxOrder}`);
 
     // Step 3 – Current quote
-    const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+    const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
     const entryPrice = side === "buy" ? ask : bid;
 
     // Step 4 – Quote slippage check (allow 1% slippage from quoted price)
@@ -202,17 +287,29 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
       if (slippage > 0.01) throw new Error("Price has moved significantly. Please refresh your quote.");
     }
 
-    // Step 5 – Wallet check
-    const fee = +(amount * FEE_RATE).toFixed(2);
-    const totalRequired = +(amount + fee).toFixed(2);
+    // Step 5 – Calc units (whole shares only) and pool availability. Both
+    // "buy" and "sell" opens consume pool capacity here — a "sell" open is a
+    // short position, which still requires borrowing available shares from
+    // the pool, same as a real margin short.
+    const units = Math.floor(amount / entryPrice);
+    if (units < 1) throw new Error("Amount too small to buy even one share at the current price");
 
+    const poolAvailable = Number(talent.shares_available_in_pool) || 0;
+    if (units > poolAvailable) {
+      throw new Error(`Not enough shares available in the liquidity pool (${poolAvailable} available, ${units} requested)`);
+    }
+
+    // Actual amount charged is recomputed from the floored share count —
+    // may be slightly less than the originally-requested amount.
+    const actualAmount = +(units * entryPrice).toFixed(2);
+    const fee = getTransactionFee(actualAmount, talent);
+    const totalRequired = +(actualAmount + fee).toFixed(2);
+
+    // Step 6 – Wallet check
     const wallet = await Wallet.findOne({ userId }).session(session);
     if (!wallet) throw new Error("Wallet not found. Please contact support.");
     const availBal = d(wallet.available_balance);
     if (availBal < totalRequired) throw new Error("Insufficient wallet balance");
-
-    // Step 6 – Calc units
-    const units = +(amount / entryPrice).toFixed(6);
 
     // Step 7 – Create position
     const [position] = await Position.create(
@@ -223,8 +320,8 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
           side,
           entry_price: D128(entryPrice),
           current_price_snapshot: D128(d(talent.current_price)),
-          units: D128(units),
-          invested_amount: D128(amount),
+          units,
+          invested_amount: D128(actualAmount),
           status: "open",
           opened_at: new Date(),
         },
@@ -239,6 +336,13 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     wallet.available_balance = D128(balanceAfter);
     await wallet.save({ session });
 
+    // Step 8b – Pool inventory: this order's shares move out of the pool
+    // into circulation (buy) or are borrowed from the pool to open a short
+    // (sell) — either way, pool availability drops by `units` until the
+    // position closes.
+    talent.shares_available_in_pool = poolAvailable - units;
+    talent.shares_in_circulation = (Number(talent.shares_in_circulation) || 0) + units;
+
     // Step 9 – Trade log
     const [trade] = await Trade.create(
       [
@@ -249,8 +353,8 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
           side,
           trade_type: "open",
           price: D128(entryPrice),
-          units: D128(units),
-          amount: D128(amount),
+          units,
+          amount: D128(actualAmount),
           fees: D128(fee),
           pnl: null,
           wallet_balance_after: D128(balanceAfter),
@@ -276,21 +380,19 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
       { session }
     );
 
-    // Step 11 – Update talent price (market impact)
-    const impact = calcMarketImpact(amount, talent.liquidity_factor, talent.volatility_multiplier);
+    // Step 11 – Update talent price (pool-depletion-based impact)
+    const impact = calcPoolPriceImpact(units, talent);
     let rawNewPrice = d(talent.current_price) + (side === "buy" ? impact : -impact);
     rawNewPrice = enforceMaxMovePerTrade(d(talent.current_price), rawNewPrice, talent.max_move_per_trade);
     rawNewPrice = enforceDailyLimit(rawNewPrice, talent.previous_close_price, talent.max_daily_move_percent);
     const newPrice = +clampPrice(rawNewPrice, talent).toFixed(4);
 
-    const newSpread = d(talent.spread);
-    const newBidAsk = calcBidAsk(newPrice, newSpread);
-
     talent.current_price = D128(newPrice);
+    const newBidAsk = calcPoolBidAsk(newPrice, talent);
     talent.bid_price = D128(newBidAsk.bid);
     talent.ask_price = D128(newBidAsk.ask);
     talent.last_trade_at = new Date();
-    await talent.save({ session });
+    await talent.save({ session }); // also persists shares_available_in_pool/shares_in_circulation from step 8b
 
     // Step 12 – Price history
     const [priceHistoryEntry] = await TalentPriceHistory.create(
@@ -300,7 +402,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
           price: D128(newPrice),
           bid_price: D128(newBidAsk.bid),
           ask_price: D128(newBidAsk.ask),
-          volume: D128(amount),
+          volume: D128(actualAmount),
           source_type: "trade",
           source_trade_id: trade._id,
           recorded_at: new Date(),
@@ -314,10 +416,10 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
       { talent_id: talentId },
       {
         $inc: {
-          volume_24h: D128(amount),
+          volume_24h: D128(actualAmount),
           ...(side === "buy"
-            ? { net_buy_pressure: D128(amount) }
-            : { net_sell_pressure: D128(amount) }),
+            ? { net_buy_pressure: D128(actualAmount) }
+            : { net_sell_pressure: D128(actualAmount) }),
         },
         $set: {
           high_24h: D128(Math.max(newPrice, 0)),
@@ -354,6 +456,18 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
       _ledger.priceHistoryEntry._id,
       _ledger.priceHistoryEntry.toObject()
     );
+    const feeAmount = d(result.trade.fees);
+    if (feeAmount > 0) {
+      await recordRevenueEvent({
+        event_type: "transaction_fee",
+        amount: feeAmount,
+        talent_id: result.trade.talent_id,
+        trade_id: result.trade._id,
+        buyer_id: side === "buy" ? userId : null,
+        seller_id: side === "sell" ? userId : null,
+        notes: "trade_open",
+      });
+    }
     return publicResult;
   });
 }
@@ -367,7 +481,7 @@ export async function closePreview(positionId, userId) {
   const talent = await Talent.findById(position.talent_id);
   if (!talent) throw new Error("Talent not found");
 
-  const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+  const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
   const exitPrice = position.side === "buy" ? bid : ask;
 
   const units = d(position.units);
@@ -381,7 +495,7 @@ export async function closePreview(positionId, userId) {
     pnl = +((entryPrice - exitPrice) * units).toFixed(2);
   }
 
-  const fee = +(Math.abs(exitPrice * units) * FEE_RATE).toFixed(2);
+  const fee = getTransactionFee(Math.abs(exitPrice * units), talent);
   const netSettlement = +(invested + pnl - fee).toFixed(2);
 
   return {
@@ -411,7 +525,7 @@ export async function closeTrade(positionId, userId) {
     if (!talent) throw new Error("Talent not found");
 
     // Step 3 – Calculate exit
-    const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+    const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
     const exitPrice = position.side === "buy" ? bid : ask;
     const units = d(position.units);
     const entryPrice = d(position.entry_price);
@@ -424,7 +538,7 @@ export async function closeTrade(positionId, userId) {
       pnl = +((entryPrice - exitPrice) * units).toFixed(2);
     }
 
-    const fee = +(Math.abs(exitPrice * units) * FEE_RATE).toFixed(2);
+    const fee = getTransactionFee(Math.abs(exitPrice * units), talent);
     const netSettlement = +(invested + pnl - fee).toFixed(2);
 
     // Step 4 – Close position
@@ -466,7 +580,7 @@ export async function closeTrade(positionId, userId) {
           side: position.side,
           trade_type: "close",
           price: D128(exitPrice),
-          units: D128(units),
+          units,
           amount: D128(Math.abs(netSettlement)),
           fees: D128(fee),
           pnl: D128(pnl),
@@ -492,9 +606,16 @@ export async function closeTrade(positionId, userId) {
       { session }
     );
 
-    // Step 9 – Update talent price (closing order pressure)
+    // Step 9 – Return shares to the pool. Closing a position (either side)
+    // frees up the units it was holding out of the pool.
+    const poolSize = Number(talent.shares_in_liquidity_pool) || 0;
+    const poolAvailable = Number(talent.shares_available_in_pool) || 0;
+    talent.shares_available_in_pool = poolSize > 0 ? Math.min(poolSize, poolAvailable + units) : poolAvailable + units;
+    talent.shares_in_circulation = Math.max(0, (Number(talent.shares_in_circulation) || 0) - units);
+
+    // Step 10 – Update talent price (closing order pressure, pool-depletion-based)
     const closeAmount = Math.abs(exitPrice * units);
-    const impact = calcMarketImpact(closeAmount, talent.liquidity_factor, talent.volatility_multiplier);
+    const impact = calcPoolPriceImpact(units, talent);
 
     // Closing a BUY = sell pressure; closing a SELL = buy pressure
     const priceDirection = position.side === "buy" ? -impact : impact;
@@ -503,14 +624,14 @@ export async function closeTrade(positionId, userId) {
     rawNewPrice = enforceDailyLimit(rawNewPrice, talent.previous_close_price, talent.max_daily_move_percent);
     const newPrice = +clampPrice(rawNewPrice, talent).toFixed(4);
 
-    const newBidAsk = calcBidAsk(newPrice, talent.spread);
     talent.current_price = D128(newPrice);
+    const newBidAsk = calcPoolBidAsk(newPrice, talent);
     talent.bid_price = D128(newBidAsk.bid);
     talent.ask_price = D128(newBidAsk.ask);
     talent.last_trade_at = new Date();
-    await talent.save({ session });
+    await talent.save({ session }); // also persists shares_available_in_pool/shares_in_circulation from step 9
 
-    // Step 10 – Price history
+    // Step 11 – Price history
     const [priceHistoryEntry] = await TalentPriceHistory.create(
       [
         {
@@ -552,6 +673,18 @@ export async function closeTrade(positionId, userId) {
       _ledger.priceHistoryEntry._id,
       _ledger.priceHistoryEntry.toObject()
     );
+    const feeAmount = d(result.trade.fees);
+    if (feeAmount > 0) {
+      await recordRevenueEvent({
+        event_type: "transaction_fee",
+        amount: feeAmount,
+        talent_id: result.trade.talent_id,
+        trade_id: result.trade._id,
+        buyer_id: result.position.side === "sell" ? userId : null,
+        seller_id: result.position.side === "buy" ? userId : null,
+        notes: "trade_close",
+      });
+    }
     return publicResult;
   });
 }
@@ -717,7 +850,7 @@ export async function getUserPnlSummary(userId) {
     const talent = await Talent.findById(pos.talent_id).lean();
     if (!talent) continue;
 
-    const { bid, ask } = calcBidAsk(talent.current_price, talent.spread);
+    const { bid, ask } = calcPoolBidAsk(talent.current_price, talent);
     const units = d(pos.units);
     const entryPrice = d(pos.entry_price);
 

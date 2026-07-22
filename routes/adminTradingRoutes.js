@@ -15,6 +15,11 @@ import {
 } from "../controllers/talentController.js";
 import { listLedgerEntries, verifyLedger } from "../controllers/ledgerController.js";
 import { simulatePledge, listPledgesForTalent } from "../controllers/futuresPledgeController.js";
+import {
+  getRevenueSummaryHandler,
+  getAssetRevenueHandler,
+  getFameScoreDashboard,
+} from "../controllers/revenueController.js";
 
 const router = express.Router();
 
@@ -43,5 +48,8 @@ router.get("/ledger", auth_key_header, auth_admin, listLedgerEntries);
 router.get("/ledger/verify", auth_key_header, auth_admin, verifyLedger);
 router.post("/futures/:talentId/simulate-pledge", auth_key_header, auth_admin, simulatePledge);
 router.get("/futures/:talentId/pledges", auth_key_header, auth_admin, listPledgesForTalent);
+router.get("/revenue/summary", auth_key_header, auth_admin, getRevenueSummaryHandler);
+router.get("/revenue/by-asset/:assetId", auth_key_header, auth_admin, getAssetRevenueHandler);
+router.get("/famescore/dashboard", auth_key_header, auth_admin, getFameScoreDashboard);
 
 export default router;

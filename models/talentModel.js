@@ -19,6 +19,25 @@ const talentSchema = new mongoose.Schema(
     bid_price: { type: mongoose.Schema.Types.Decimal128, required: true },
     ask_price: { type: mongoose.Schema.Types.Decimal128, required: true },
     spread: { type: mongoose.Schema.Types.Decimal128, default: 0.5 },
+
+    // ── Discrete share model + liquidity pool ────────────────────────
+    // Fixed supply, set exactly once at the moment this talent becomes
+    // tradeable (see services/shareAllocationService.js). null until then —
+    // a futures-tier talent has no shares yet. shares_in_circulation starts
+    // at 0 and grows as pledges convert to positions and/or the market buys
+    // pull shares out of the pool; shares_available_in_pool is the market
+    // maker's live remaining inventory (shares_in_liquidity_pool minus
+    // whatever's currently out via open positions).
+    total_shares: { type: Number, default: null },
+    shares_in_liquidity_pool: { type: Number, default: null },
+    shares_available_in_pool: { type: Number, default: null },
+    shares_in_circulation: { type: Number, default: 0 },
+    initial_share_price: { type: mongoose.Schema.Types.Decimal128, default: null },
+
+    // liquidity_factor/volatility_multiplier fed the old synthetic (non-
+    // pool-based) price-impact model. No longer used by tradingService.js's
+    // live trade path once shares_in_liquidity_pool is set, but left
+    // declared (not removed) as a rollback path during the transition.
     liquidity_factor: { type: mongoose.Schema.Types.Decimal128, default: 50000 },
     volatility_multiplier: { type: mongoose.Schema.Types.Decimal128, default: 1.0 },
     min_price: { type: mongoose.Schema.Types.Decimal128, default: 1.0 },
@@ -42,9 +61,22 @@ const talentSchema = new mongoose.Schema(
     // nudge current_price toward the FameScore-derived fundamental value.
     // Admins can disable this per-talent to fully hand-manage a price.
     auto_price_enabled: { type: Boolean, default: true },
-    fame_score: { type: Number, default: null, min: 0, max: 1000 },
+    // 0-100 scale (v2 algorithm — was 0-1000 under the earlier log-scaled
+    // follower-count algorithm this replaced).
+    fame_score: { type: Number, default: null, min: 0, max: 100 },
     fame_score_breakdown: { type: mongoose.Schema.Types.Mixed, default: null },
     fame_score_updated_at: { type: Date, default: null },
+    // Directly-queryable qualification fields (kept out of the schema-less
+    // fame_score_breakdown Mixed field so the admin dashboard can sort/filter
+    // on them without scanning breakdown JSON).
+    qualified: { type: Boolean, default: null },
+    qualification_reason: { type: String, default: null },
+    estimated_monetization_value: { type: mongoose.Schema.Types.Decimal128, default: null },
+    next_re_evaluation_at: { type: Date, default: null },
+    // Set the first time a TRADEABLE talent's recalculation shows them no
+    // longer qualified. Cleared if they requalify before the grace period
+    // elapses; if not, status flips to "suspended" (see famescoreService.js).
+    qualification_grace_started_at: { type: Date, default: null },
 
     // ── Futures tier (pre-tradeable showcase + crowdfunding) ─────────
     // "tradeable": listed on the live market, can be bought/sold normally.
@@ -67,7 +99,7 @@ talentSchema.methods.toDisplay = function () {
     "current_price", "bid_price", "ask_price", "spread",
     "liquidity_factor", "volatility_multiplier", "min_price", "max_price",
     "max_move_per_trade", "min_order_amount", "max_order_amount", "previous_close_price",
-    "total_pledged",
+    "total_pledged", "estimated_monetization_value", "initial_share_price",
   ];
   for (const field of decimalFields) {
     if (obj[field]) obj[field] = parseFloat(obj[field].toString());

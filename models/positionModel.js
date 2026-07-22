@@ -19,7 +19,9 @@ const positionSchema = new mongoose.Schema(
     },
     entry_price: { type: mongoose.Schema.Types.Decimal128, required: true },
     current_price_snapshot: { type: mongoose.Schema.Types.Decimal128, required: true },
-    units: { type: mongoose.Schema.Types.Decimal128, required: true },
+    // Whole shares only (discrete share model) — was a continuous Decimal128
+    // fraction (amount / entry_price) before the share-model rebuild.
+    units: { type: Number, required: true },
     invested_amount: { type: mongoose.Schema.Types.Decimal128, required: true },
     status: {
       type: String,

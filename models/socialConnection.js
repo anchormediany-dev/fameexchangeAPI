@@ -32,6 +32,20 @@ const socialConnectionSchema = new mongoose.Schema(
     // The number that feeds social_worth
     followers: { type: Number, default: 0 },
 
+    // FameScore v2 inputs. Real engagement data is only obtainable today for
+    // YouTube (see services/socialProviders/youtube.js) — everywhere else
+    // this stays null and FameScore v2 falls back to a documented industry-
+    // average estimate (engagementRateSource: "platform_default_estimate").
+    // Never silently fabricate a "measured" number for a platform we can't
+    // actually measure.
+    engagementRate: { type: Number, default: null },
+    engagementRateSource: {
+      type: String,
+      enum: ["measured", "platform_default_estimate", null],
+      default: null,
+    },
+    avgViewsPerPost: { type: Number, default: null },
+
     // OAuth material. select:false so it is never returned by default queries
     // and never leaks through the API. Needed to refresh follower counts later.
     accessToken: { type: String, select: false },

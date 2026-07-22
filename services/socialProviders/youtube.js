@@ -64,7 +64,9 @@ export default {
     const { data } = await axios.get(
       "https://www.googleapis.com/youtube/v3/channels",
       {
-        params: { part: "snippet,statistics", mine: "true" },
+        // contentDetails costs no extra quota bundled into this same call —
+        // it's what gives us the uploads playlist ID for engagementMetrics().
+        params: { part: "snippet,statistics,contentDetails", mine: "true" },
         headers: { Authorization: `Bearer ${accessToken}` },
       }
     );
@@ -77,11 +79,83 @@ export default {
         followers: 0,
       };
     }
+
+    const engagement = await engagementMetrics(accessToken, channel);
+
     return {
       providerUserId: channel.id,
       username: channel.snippet?.title || null,
       profileUrl: `https://www.youtube.com/channel/${channel.id}`,
       followers: Number(channel.statistics?.subscriberCount || 0),
+      ...engagement,
     };
   },
 };
+
+const RECENT_VIDEOS_SAMPLE_SIZE = 10;
+
+/**
+ * Real engagement rate from a channel's most recent uploads — FameScore v2
+ * input. Uses contentDetails.relatedPlaylists.uploads (free, already fetched
+ * above) -> playlistItems.list for recent video IDs -> videos.list for real
+ * like/comment/view counts. Deliberately avoids search.list (100x the quota
+ * cost of playlistItems.list for the same result).
+ *
+ * Best-effort: any failure here (private stats, zero uploads, transient API
+ * error) must never break the core follower-count fetch this is bolted onto
+ * — returns nulls with no engagementRateSource rather than throwing, so
+ * FameScore v2 falls back to its documented platform-default estimate
+ * instead of silently fabricating a "measured" number.
+ */
+async function engagementMetrics(accessToken, channel) {
+  try {
+    const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) return { engagementRate: null, engagementRateSource: null, avgViewsPerPost: null };
+
+    const { data: playlistData } = await axios.get(
+      "https://www.googleapis.com/youtube/v3/playlistItems",
+      {
+        params: {
+          part: "contentDetails",
+          playlistId: uploadsPlaylistId,
+          maxResults: RECENT_VIDEOS_SAMPLE_SIZE,
+        },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+    const videoIds = (playlistData?.items || [])
+      .map((item) => item.contentDetails?.videoId)
+      .filter(Boolean);
+    if (!videoIds.length) return { engagementRate: null, engagementRateSource: null, avgViewsPerPost: null };
+
+    const { data: videosData } = await axios.get(
+      "https://www.googleapis.com/youtube/v3/videos",
+      {
+        params: { part: "statistics", id: videoIds.join(",") },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    const videos = videosData?.items || [];
+    if (!videos.length) return { engagementRate: null, engagementRateSource: null, avgViewsPerPost: null };
+
+    let totalViews = 0;
+    let totalEngagements = 0; // likes + comments
+    for (const v of videos) {
+      const stats = v.statistics || {};
+      totalViews += Number(stats.viewCount || 0);
+      totalEngagements += Number(stats.likeCount || 0) + Number(stats.commentCount || 0);
+    }
+
+    if (totalViews === 0) return { engagementRate: null, engagementRateSource: null, avgViewsPerPost: null };
+
+    return {
+      engagementRate: +(totalEngagements / totalViews).toFixed(4),
+      engagementRateSource: "measured",
+      avgViewsPerPost: Math.round(totalViews / videos.length),
+    };
+  } catch (err) {
+    console.error("YouTube engagementMetrics failed (non-fatal):", err?.response?.data || err.message);
+    return { engagementRate: null, engagementRateSource: null, avgViewsPerPost: null };
+  }
+}

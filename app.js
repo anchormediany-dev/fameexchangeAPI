@@ -38,6 +38,7 @@ import positionRoutes from "./routes/positionRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import adminTradingRoutes from "./routes/adminTradingRoutes.js";
 import futuresRoutes from "./routes/futuresRoutes.js";
+import famescoreRoutes from "./routes/famescoreRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 import { startFameScoreScheduler } from "./services/famescoreScheduler.js";
 import { startFuturesScheduler } from "./services/futuresScheduler.js";
@@ -157,6 +158,7 @@ app.use("/api/positions", positionRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminTradingRoutes);
 app.use("/api/futures", futuresRoutes);
+app.use("/api/famescore", famescoreRoutes);
 
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint

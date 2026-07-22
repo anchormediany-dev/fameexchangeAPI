@@ -32,6 +32,16 @@ const sendEmail = async (to, type, otp) => {
         <p>If you didn't request a password reset, please ignore this email.</p>
         <p>Best,<br/>Your App Team</p>
       `;
+    } else if (type === "claim_account") {
+      subject = "Your FameExchange Account is Ready — Set Your Password";
+      html = `
+        <p>Hi there,</p>
+        <p>We just calculated your FameScore and created your FameExchange account so your result is saved.</p>
+        <p>Use this code on the "Reset Password" screen (with this email address) to set your own password and log in anytime:</p>
+        <h2>${otp}</h2>
+        <p>If you didn't request this, you can safely ignore this email.</p>
+        <p>Thanks,<br/>Your App Team</p>
+      `;
     } else {
       console.error("Invalid email type:", type);
       return false;

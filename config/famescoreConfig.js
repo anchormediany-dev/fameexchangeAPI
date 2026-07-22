@@ -1,58 +1,110 @@
 // Proprietary "FameScore" valuation engine configuration.
 //
-// FameScore converts a talent's social presence into a single 0-1000 score,
-// which is then mapped onto their tradable price band. Tuning these constants
-// changes how the platform values fame across platforms — this is the
-// proprietary "secret sauce" of the valuation, kept server-side only.
+// FameScore converts a talent's social presence into a single 0-100 score,
+// estimated from MONTHLY MONETIZATION VALUE (followers x engagement rate x
+// per-platform revenue multiplier) rather than raw follower counts alone —
+// this is the v2 algorithm, replacing an earlier log-scaled-follower-count
+// approach. Tuning these constants changes how the platform values fame —
+// this is the proprietary "secret sauce" of the valuation, kept server-side
+// only.
 
-// Relative importance of each platform's follower count. These are business
-// calls (e.g. YouTube/TikTok audiences tend to be more monetizable/attention-
-// dense than X/Twitter), not derived from any external source.
-export const PLATFORM_WEIGHT = {
-  youtube: 1.2,
-  tiktok: 1.15,
-  instagram: 1.0,
-  facebook: 0.8,
-  twitter: 0.85,
-  snapchat: 0.9,
+// Estimated $ revenue per 1,000 engaged followers/views/listeners, by
+// platform — a business estimate of monetization density, not derived from
+// any external data source. The midpoint of each range is used in scoring.
+export const PLATFORM_MULTIPLIERS = {
+  youtube: { min: 15, max: 30 }, // per 1K views
+  tiktok: { min: 5, max: 20 },
+  instagram: { min: 10, max: 25 },
+  twitch: { min: 20, max: 50 },
+  twitter: { min: 2, max: 10 }, // rest of the codebase keys this platform "twitter", not "x"
+  spotify: { min: 3, max: 7 }, // per 1K monthly listeners
 };
 
-// A connection's contribution is multiplied by this depending on how the
-// follower count was obtained. OAuth-verified, platform-API-sourced counts
-// (SocialConnection) are trusted fully. Legacy/public-scrape-derived counts
-// (Networth) are discounted since they're easier to be stale, wrong, or
-// spoofed (public profile scraping has no ownership proof).
-export const VERIFICATION_MULTIPLIER = {
-  oauth_verified: 1.0,
-  scraped_unverified: 0.5,
+export const DEFAULT_PLATFORM_MULTIPLIER = { min: 5, max: 15 };
+
+export function platformMultiplierMidpoint(platform) {
+  const range = PLATFORM_MULTIPLIERS[platform] || DEFAULT_PLATFORM_MULTIPLIER;
+  return (range.min + range.max) / 2;
+}
+
+// A talent qualifies for the live tradeable market only if ALL of these
+// hold — deliberately a multi-factor gate, not a single score threshold, so
+// a talent can't qualify purely by gaming one dimension (e.g. a huge but
+// dead/bought follower count with no real engagement).
+//
+// requireGrowthTrend is intentionally strict with NO first-evaluation
+// exception (see services/socialSnapshotService.js): growth can only be
+// measured once a GROWTH_LOOKBACK_DAYS-old snapshot exists, so a brand-new
+// talent cannot qualify via either qualification path on their very first
+// evaluation, no matter how strong their other numbers are. Confirmed as a
+// deliberate product decision, not a bug.
+export const QUALIFICATION_THRESHOLDS = {
+  minTotalFollowers: 50000,
+  minEngagementRate: 0.02, // 2%
+  minPlatforms: 2,
+  requireGrowthTrend: true,
 };
 
-// Reference ceiling per platform used to normalize log-scaled follower counts
-// into the 0-1000 FameScore range. A talent hitting this many followers on a
-// given platform contributes that platform's full weight to the score.
-export const PLATFORM_REFERENCE_FOLLOWERS = {
-  youtube: 50_000_000,
-  tiktok: 50_000_000,
-  instagram: 50_000_000,
-  facebook: 30_000_000,
-  twitter: 30_000_000,
-  snapchat: 30_000_000,
+// Alternative qualification path: a single platform, on its own, clearing a
+// meaningfully higher bar than the multi-platform path's aggregate minimums
+// also qualifies — so a genuine single-platform mega-creator (e.g. a 5M-
+// subscriber YouTuber with no other presence) isn't blocked purely by
+// minPlatforms. Deliberately set well above QUALIFICATION_THRESHOLDS'
+// minTotalFollowers/minEngagementRate (not just matching them), since a
+// single platform carries more concentration risk than a diversified
+// footprint — this is a business call, tune freely.
+export const SINGLE_PLATFORM_QUALIFICATION = {
+  minFollowers: 250000,
+  minEngagementRate: 0.03, // 3%
 };
 
-export const FAMESCORE_MAX = 1000;
+// $/month estimated monetization value that maps to a full 100-point score.
+export const MONETIZATION_BENCHMARK_MONTHLY = 50000;
 
-// FameScore combines a talent's strongest platform with a smaller bonus for
-// presence on additional platforms, rather than requiring strength on every
-// platform at once (which would make single-platform mega-creators
-// impossible to score highly). PRIMARY_WEIGHT applies to the single best
-// platform; SECONDARY_WEIGHT applies to the average of the rest.
-export const PRIMARY_WEIGHT = 0.7;
-export const SECONDARY_WEIGHT = 0.3;
+// Score bonuses, added after the monetization-value base score (result still
+// capped at 100 overall).
+export const GROWTH_BONUS = 5;
+export const VERIFIED_BONUS = 3;
+export const MULTI_PLATFORM_BONUS_3PLUS = 5;
+export const MULTI_PLATFORM_BONUS_2 = 2;
 
-// Price curve: price = min_price + (max_price - min_price) * (score/1000)^CURVE_EXPONENT
+export const FAMESCORE_MAX = 100;
+
+// Where real engagement-rate data isn't available — which is most
+// platforms, most of the time, since most don't expose this without paid/
+// reviewed API access this project doesn't have (see
+// services/socialProviders/*.js — YouTube is currently the only platform
+// with real measured engagement) — we fall back to a documented industry-
+// average ASSUMPTION, never a silently fabricated "measured" number. Every
+// platform contribution in a FameScore breakdown is tagged
+// engagementRateSource: "measured" | "platform_default_estimate" so this
+// stays visible, not hidden, in the admin dashboard.
+export const DEFAULT_ENGAGEMENT_RATE_BY_PLATFORM = {
+  youtube: 0.04,
+  tiktok: 0.06,
+  instagram: 0.03,
+  facebook: 0.02,
+  twitter: 0.02,
+  snapchat: 0.03,
+  twitch: 0.05,
+  spotify: 0.01,
+};
+export const DEFAULT_ENGAGEMENT_RATE_FALLBACK = 0.02;
+
+// How far back to look for a prior follower-count snapshot when computing
+// growth rate (see models/socialSnapshotModel.js).
+export const GROWTH_LOOKBACK_DAYS = 30;
+
+// How often a Futures-tier (not-yet-qualified) talent's gap analysis /
+// re-evaluation date gets refreshed.
+export const RE_EVALUATION_DAYS = 90;
+
+// Price curve: price = min_price + (max_price - min_price) * (score/FAMESCORE_MAX)^CURVE_EXPONENT
 // Exponent > 1 skews most scores toward the lower end of the price band, with
 // price escalating quickly only for top-tier FameScores — reflecting that
-// real-world fame/value distributions are extremely long-tailed.
+// real-world fame/value distributions are extremely long-tailed. Independent
+// of the scoring algorithm itself — unaffected by the v1->v2 score-formula
+// change, only by the FAMESCORE_MAX rescale above.
 export const PRICE_CURVE_EXPONENT = 2.2;
 
 // Re-mark (post-listing) damping: on each scheduled/triggered recalculation,

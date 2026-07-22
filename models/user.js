@@ -35,6 +35,11 @@ const userSchema = new mongoose.Schema(
     facebook_login_id: { type: String },
 
     OTP_code: { type: String },
+    // Epoch-ms expiry for OTP_code (signup verification, password reset,
+    // account-claim). Was previously read/written by controllers/auth.js
+    // without being declared here, so Mongoose silently dropped it on every
+    // save — every OTP was effectively permanent. Now it actually persists.
+    otp_expiry: { type: Number, default: null },
     is_verified: { type: Boolean, default: false },
     KYC_Verified: { type: Boolean, default: false },
     is_rep_have: { type: Boolean, default: false },

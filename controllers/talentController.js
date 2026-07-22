@@ -12,7 +12,9 @@ import {
   recalculateAllTalentValuations,
 } from "../services/famescoreService.js";
 import { appendLedgerEntry } from "../services/ledgerService.js";
-import { MIN_FAMESCORE_TRADEABLE } from "../config/futuresConfig.js";
+import { computeShareAllocation } from "../services/shareAllocationService.js";
+import { recordRevenueEvent } from "../services/revenueTrackerService.js";
+import { calculateListingFee } from "../config/feeConfig.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
@@ -132,17 +134,20 @@ export const getTopTalents = async (req, res) => {
       const stats = statsByTalent.get(String(t._id));
       const owner = t.userId ? userByMap.get(String(t.userId)) : null;
 
-      const unitsHeld = pos ? +Number(pos.unitsHeld || 0).toFixed(6) : 0;
+      const unitsHeld = pos ? Math.round(Number(pos.unitsHeld || 0)) : 0;
       const invested = pos ? +Number(pos.invested || 0).toFixed(2) : 0;
-      const liquidityFactor = parseFloat((t.liquidity_factor || 0).toString());
-      // Available units = liquidity pool minus what is currently held by traders.
-      // Falls back to liquidity / price if there are no open positions yet.
-      const totalUnitsPool =
-        currentPrice > 0 ? liquidityFactor / currentPrice : 0;
-      const availableUnits = Math.max(
-        0,
-        +(totalUnitsPool - unitsHeld).toFixed(6)
-      );
+      // Real pool inventory (see services/shareAllocationService.js) — every
+      // tradeable-tier talent going through the current flow has this set.
+      // Falls back to the old synthetic liquidity_factor/price estimate only
+      // for a legacy talent that somehow predates share allocation.
+      const availableUnits = t.shares_available_in_pool != null
+        ? Number(t.shares_available_in_pool)
+        : Math.max(
+            0,
+            Math.floor(
+              (currentPrice > 0 ? parseFloat((t.liquidity_factor || 0).toString()) / currentPrice : 0) - unitsHeld
+            )
+          );
       const volume24h = stats
         ? parseFloat(stats.volume_24h.toString())
         : 0;
@@ -324,9 +329,21 @@ export const createTalent = async (req, res) => {
     // FameScore for them (i.e. auto_price was used). Manually admin-priced
     // talents default straight to tradeable, same as before this feature.
     const tier =
-      fameScoreResult && fameScoreResult.fameScore < MIN_FAMESCORE_TRADEABLE
+      fameScoreResult && !fameScoreResult.qualified
         ? "futures"
         : "tradeable";
+
+    // Share supply is only sized here if this talent is tradeable RIGHT NOW.
+    // A futures-tier talent gets its shares sized later, at graduation. A
+    // manually admin-priced talent (no fameScoreResult, no monetization
+    // value to size from) falls back to the share-count floor with the
+    // admin-set current_price as the share price directly.
+    let shareAllocation = null;
+    if (tier === "tradeable") {
+      shareAllocation = fameScoreResult
+        ? computeShareAllocation(fameScoreResult.estimatedMonetizationValue)
+        : { ...computeShareAllocation(0), initialSharePrice: currentPrice };
+    }
 
     const talent = await Talent.create({
       ...data,
@@ -349,6 +366,17 @@ export const createTalent = async (req, res) => {
             fame_score: fameScoreResult.fameScore,
             fame_score_breakdown: fameScoreResult.breakdown,
             fame_score_updated_at: new Date(),
+            qualified: fameScoreResult.qualified,
+            qualification_reason: fameScoreResult.qualificationReason,
+            estimated_monetization_value: D128(fameScoreResult.estimatedMonetizationValue),
+          }
+        : {}),
+      ...(shareAllocation
+        ? {
+            total_shares: shareAllocation.totalShares,
+            shares_in_liquidity_pool: shareAllocation.sharesInLiquidityPool,
+            shares_available_in_pool: shareAllocation.sharesInLiquidityPool,
+            initial_share_price: D128(shareAllocation.initialSharePrice),
           }
         : {}),
     });
@@ -368,6 +396,18 @@ export const createTalent = async (req, res) => {
       priceHistoryEntry._id,
       priceHistoryEntry.toObject()
     );
+
+    // Listing fee — charged exactly once, only if this talent is tradeable
+    // right away (matches the self-serve apply flow's rule).
+    if (tier === "tradeable") {
+      const listingFee = calculateListingFee(fameScoreResult ? fameScoreResult.estimatedMonetizationValue : 0);
+      await recordRevenueEvent({
+        event_type: "listing_fee",
+        amount: listingFee,
+        talent_id: talent._id,
+        notes: "admin_created",
+      });
+    }
 
     res.status(201).json({ success: true, talent: talent.toDisplay() });
   } catch (err) {

@@ -15,7 +15,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     source_type: {
       type: String,
       required: true,
-      enum: ["trade", "wallet_transaction", "talent_price_history", "futures_pledge"],
+      enum: ["trade", "wallet_transaction", "talent_price_history", "futures_pledge", "revenue_event"],
     },
     source_id: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
 

@@ -14,11 +14,16 @@ import {
   resetPassword,
   signupAdmin,
   googleLogin,
+  quickQualify,
 } from "../controllers/auth.js";
 
 // Signup User
 router.post("/signup", auth_key_header, signup);
 router.post("/admin-signup", auth_key_header, signupAdmin);
+
+// "See If You Qualify" — public quick-qualify flow (name + email + socials),
+// silently creates a real account and runs the FameScore pipeline.
+router.post("/quick-qualify", auth_key_header, quickQualify);
 
 // Login User
 router.post("/signin", auth_key_header, login);

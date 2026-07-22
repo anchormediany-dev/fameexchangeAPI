@@ -8,6 +8,9 @@ import Wallet from "../models/walletModel.js";
 import Notification from "../models/notificationModel.js";
 import { calcBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
+import { computeShareAllocation } from "./shareAllocationService.js";
+import { recordRevenueEvent } from "./revenueTrackerService.js";
+import { calculateListingFee } from "../config/feeConfig.js";
 import {
   PLEDGE_BONUS_RATE,
   PLEDGE_DEADLINE_DAYS,
@@ -188,7 +191,10 @@ async function fulfillSinglePledge(pledge, talent) {
   const amount = d(pledge.amount);
   const bonusMultiplier = 1 + Number(pledge.bonus_rate);
   const graduationPrice = d(talent.current_price);
-  const units = +((amount * bonusMultiplier) / graduationPrice).toFixed(6);
+  // Whole shares only. Floor, but never below 1 — the pledger's money was
+  // already captured via Stripe, so a fulfilled pledge always awards at
+  // least one share rather than rounding a small pledge down to zero.
+  const units = Math.max(1, Math.floor((amount * bonusMultiplier) / graduationPrice));
 
   let wallet = await Wallet.findOne({ userId: pledge.user_id });
   if (!wallet) {
@@ -201,7 +207,7 @@ async function fulfillSinglePledge(pledge, talent) {
     side: "buy",
     entry_price: D128(graduationPrice),
     current_price_snapshot: D128(graduationPrice),
-    units: D128(units),
+    units,
     invested_amount: D128(amount),
     status: "open",
     opened_at: new Date(),
@@ -214,7 +220,7 @@ async function fulfillSinglePledge(pledge, talent) {
     side: "buy",
     trade_type: "open",
     price: D128(graduationPrice),
-    units: D128(units),
+    units,
     amount: D128(amount),
     fees: D128(0),
     pnl: null,
@@ -227,6 +233,13 @@ async function fulfillSinglePledge(pledge, talent) {
   pledge.awarded_entry_price = D128(graduationPrice);
   pledge.position_id = position._id;
   await pledge.save();
+
+  // Pledge-fulfillment shares come from the total_shares reserve outside the
+  // liquidity pool (a one-time initial distribution to early backers, not a
+  // market purchase) — only shares_in_circulation moves, the pool itself is
+  // untouched here.
+  talent.shares_in_circulation = (Number(talent.shares_in_circulation) || 0) + units;
+  await talent.save();
 
   await appendLedgerEntry("trade", trade._id, trade.toObject());
   await appendLedgerEntry("futures_pledge", pledge._id, pledge.toObject());
@@ -258,6 +271,27 @@ export async function graduateTalentToTradeable(talent) {
   );
   if (!claimed) return { graduated: false, reason: "not_futures_tier" };
 
+  // Fixed share supply, sized exactly once — the moment this talent actually
+  // becomes tradeable (see services/shareAllocationService.js).
+  const { totalShares, sharesInLiquidityPool, initialSharePrice } = computeShareAllocation(
+    d(claimed.estimated_monetization_value)
+  );
+  claimed.total_shares = totalShares;
+  claimed.shares_in_liquidity_pool = sharesInLiquidityPool;
+  claimed.shares_available_in_pool = sharesInLiquidityPool;
+  claimed.initial_share_price = D128(initialSharePrice);
+  await claimed.save();
+
+  // Listing fee — charged exactly once, right here, the moment this talent
+  // actually goes tradeable (never charged for simply sitting futures-tier).
+  const listingFee = calculateListingFee(d(claimed.estimated_monetization_value));
+  await recordRevenueEvent({
+    event_type: "listing_fee",
+    amount: listingFee,
+    talent_id: claimed._id,
+    notes: "futures_graduation",
+  });
+
   const pendingPledges = await FuturesPledge.find({ talent_id: claimed._id, status: "pending" });
   const { bid } = calcBidAsk(claimed.current_price, claimed.spread);
 
@@ -266,7 +300,12 @@ export async function graduateTalentToTradeable(talent) {
     fulfillments.push(await fulfillSinglePledge(pledge, claimed));
   }
 
-  return { graduated: true, fulfillments, bid_at_graduation: bid };
+  return {
+    graduated: true,
+    fulfillments,
+    bid_at_graduation: bid,
+    share_allocation: { totalShares, sharesInLiquidityPool, initialSharePrice },
+  };
 }
 
 /**

@@ -3,6 +3,19 @@ import { OAuth2Client } from "google-auth-library";
 import sendEmail from "../utils/helper.js";
 import { signupSchema } from "../validators/user.js";
 import jwt from "jsonwebtoken";
+import { quickQualify as runQuickQualify } from "../services/quickQualifyService.js";
+
+// POST /api/auth/quick-qualify — public, no login required.
+// Body: { name, email, socials: { youtube?, twitter?, instagram?, facebook?, tiktok?, snapchat? } }
+export const quickQualify = async (req, res) => {
+  try {
+    const { name, email, socials } = req.body || {};
+    const result = await runQuickQualify({ name, email, socials });
+    res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
 const signup = async (req, res) => {
   try {
     // ✅ Validate Request
@@ -156,10 +169,10 @@ const verifyOTP = async (req, res) => {
       return res.status(400).json({ message: "user not found" });
     }
 
-    if (user.OTP_code == otp || otp == "1234") {
+    if (String(user.OTP_code) === String(otp)) {
       const updatedUser = await User.findByIdAndUpdate(
         user._id,
-        { is_verified: true, OTP_code: "" },
+        { is_verified: true, OTP_code: "", otp_expiry: null },
         { new: true }
       );
       if (!updatedUser) {
@@ -268,11 +281,11 @@ export const resetPassword = async (req, res) => {
     }
 
     // Verify if the OTP matches and is not expired
-    if (user.OTP_code == otp || otp !== "1234") {
+    if (String(user.OTP_code) !== String(otp)) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
 
-    if (user.otp_expiry < Date.now()) {
+    if (!user.otp_expiry || user.otp_expiry < Date.now()) {
       return res.status(400).json({ message: "OTP has expired" });
     }
 

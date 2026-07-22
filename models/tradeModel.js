@@ -29,7 +29,9 @@ const tradeSchema = new mongoose.Schema(
       required: true,
     },
     price: { type: mongoose.Schema.Types.Decimal128, required: true },
-    units: { type: mongoose.Schema.Types.Decimal128, required: true },
+    // Whole shares only (discrete share model) — was a continuous Decimal128
+    // fraction before the share-model rebuild.
+    units: { type: Number, required: true },
     amount: { type: mongoose.Schema.Types.Decimal128, required: true },
     fees: { type: mongoose.Schema.Types.Decimal128, default: 0 },
     pnl: { type: mongoose.Schema.Types.Decimal128, default: null },
