@@ -71,6 +71,11 @@ const talentSchema = new mongoose.Schema(
     // on them without scanning breakdown JSON).
     qualified: { type: Boolean, default: null },
     qualification_reason: { type: String, default: null },
+    // True when a talent's FameScore qualifies them as tradeable but the KYC
+    // gate (config/kycConfig.js) is blocking the tier flip — distinct from
+    // "qualified: false" (genuinely below threshold) so the frontend can show
+    // different copy ("complete KYC to go live" vs. "here's what it takes").
+    qualified_pending_kyc: { type: Boolean, default: false },
     estimated_monetization_value: { type: mongoose.Schema.Types.Decimal128, default: null },
     next_re_evaluation_at: { type: Date, default: null },
     // Set the first time a TRADEABLE talent's recalculation shows them no

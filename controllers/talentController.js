@@ -15,6 +15,7 @@ import { appendLedgerEntry } from "../services/ledgerService.js";
 import { computeShareAllocation } from "../services/shareAllocationService.js";
 import { recordRevenueEvent } from "../services/revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
+import { isKycVerified } from "../config/kycConfig.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
@@ -325,13 +326,18 @@ export const createTalent = async (req, res) => {
 
     const { bid, ask } = calcBidAsk(currentPrice, data.spread || 0.5);
 
-    // A talent only gets gated into the futures tier when we actually know a
-    // FameScore for them (i.e. auto_price was used). Manually admin-priced
-    // talents default straight to tradeable, same as before this feature.
-    const tier =
-      fameScoreResult && !fameScoreResult.qualified
-        ? "futures"
-        : "tradeable";
+    // A talent only gets gated into the futures tier on FameScore grounds
+    // when we actually know a score for them (i.e. auto_price was used).
+    // Separately — and unconditionally, even for manually admin-priced
+    // talents — going tradeable also requires a linked, KYC-verified user.
+    // An admin vouching for a talent doesn't bypass identity verification;
+    // if there's no linked userId at all, there's nothing to verify against,
+    // so it's treated the same as "not verified."
+    const scoreQualifies = !fameScoreResult || fameScoreResult.qualified;
+    const kycUser = data.userId ? await User.findById(data.userId) : null;
+    const kycVerified = isKycVerified(kycUser);
+    const tier = scoreQualifies && kycVerified ? "tradeable" : "futures";
+    const qualifiedPendingKyc = scoreQualifies && !kycVerified;
 
     // Share supply is only sized here if this talent is tradeable RIGHT NOW.
     // A futures-tier talent gets its shares sized later, at graduation. A
@@ -360,6 +366,7 @@ export const createTalent = async (req, res) => {
       min_order_amount: D128(data.min_order_amount || 10),
       max_order_amount: D128(data.max_order_amount || 100000),
       tier,
+      qualified_pending_kyc: qualifiedPendingKyc,
       futures_started_at: tier === "futures" ? new Date() : null,
       ...(fameScoreResult
         ? {

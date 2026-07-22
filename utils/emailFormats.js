@@ -213,6 +213,99 @@ ${brand} Team`;
   return { subject, preheader, text, html };
 }
 
+/** KYC SUBMITTED (subject, preheader, text, html) */
+export function getKycSubmittedEmail({ brand = "The Fame Exchange", userName = "there" } = {}) {
+  const subject = "Your Fame Exchange Verification is Under Review";
+  const preheader = "We've received your identity verification submission.";
+
+  const text = `Hi ${userName},
+
+We've received your identity verification (KYC) submission. Our team typically
+reviews applications within 48-72 hours. We'll email you as soon as a decision
+has been made — no action is needed from you in the meantime.
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hi ${esc(userName)},</p>
+  <p>We've received your identity verification (KYC) submission.</p>
+  <div style="${cardStyles}">
+    <p style="margin:0;">Our team typically reviews applications within <strong>48-72 hours</strong>. We'll email you as soon as a decision has been made — no action is needed from you in the meantime.</p>
+  </div>
+  <p>Thanks for your patience,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
+/** KYC APPROVED (subject, preheader, text, html) */
+export function getKycApprovedEmail({ brand = "The Fame Exchange", userName = "there", profileLink } = {}) {
+  const subject = "You're Verified! Your Shares Are Now Live on The Fame Exchange";
+  const preheader = "Your identity has been verified and your shares are now tradeable.";
+
+  const text = `Hi ${userName},
+
+Congratulations — your identity verification is complete! Your Branded Talent
+Shares are now live and tradeable on The Fame Exchange.${
+    profileLink ? `\n\nView your profile: ${profileLink}` : ""
+  }
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hi ${esc(userName)},</p>
+  <p>Congratulations — your identity verification is complete! Your Branded Talent Shares are now <strong>live and tradeable</strong> on The Fame Exchange.</p>
+  ${
+    profileLink
+      ? `<div style="${cardStyles}"><p style="margin:0;"><a href="${safeHref(profileLink)}">View your profile →</a></p></div>`
+      : ""
+  }
+  <p>Welcome aboard,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
+/** KYC REJECTED (subject, preheader, text, html) */
+export function getKycRejectedEmail({ brand = "The Fame Exchange", userName = "there", rejectionReason, resubmitLink } = {}) {
+  const subject = "Action Needed: Verification Update";
+  const preheader = "Your identity verification needs attention before it can be approved.";
+
+  const text = `Hi ${userName},
+
+Your identity verification (KYC) submission could not be approved as-is.${
+    rejectionReason ? `\n\nReason: ${rejectionReason}` : ""
+  }
+
+Please review the issue and resubmit your documents.${
+    resubmitLink ? `\n\nResubmit here: ${resubmitLink}` : ""
+  }
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hi ${esc(userName)},</p>
+  <p>Your identity verification (KYC) submission could not be approved as-is.</p>
+  ${
+    rejectionReason
+      ? `<div style="${cardStyles}"><p style="margin:0;"><strong>Reason:</strong> ${esc(rejectionReason)}</p></div>`
+      : ""
+  }
+  <p>Please review the issue above and resubmit your documents.${
+    resubmitLink ? ` <a href="${safeHref(resubmitLink)}">Resubmit here →</a>` : ""
+  }</p>
+  <p>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
 /* ===================== SEND HELPERS ===================== */
 async function sendMail({ brand, to, subject, html, text, replyTo, headers }) {
   try {
@@ -261,6 +354,24 @@ export async function sendTicketReminderEmail(to, payload) {
   });
 }
 
+/** Send: KYC Submitted */
+export async function sendKycSubmittedEmail(to, payload) {
+  const { subject, html, text } = getKycSubmittedEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
+}
+
+/** Send: KYC Approved */
+export async function sendKycApprovedEmail(to, payload) {
+  const { subject, html, text } = getKycApprovedEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
+}
+
+/** Send: KYC Rejected */
+export async function sendKycRejectedEmail(to, payload) {
+  const { subject, html, text } = getKycRejectedEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
+}
+
 // default export if you prefer one import point
 export default {
   getTransporter,
@@ -268,4 +379,10 @@ export default {
   getTicketReminderEmail,
   sendSessionReminderEmail,
   sendTicketReminderEmail,
+  getKycSubmittedEmail,
+  getKycApprovedEmail,
+  getKycRejectedEmail,
+  sendKycSubmittedEmail,
+  sendKycApprovedEmail,
+  sendKycRejectedEmail,
 };

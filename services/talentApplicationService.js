@@ -8,6 +8,7 @@ import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
+import { isKycVerified } from "../config/kycConfig.js";
 import { RE_EVALUATION_DAYS } from "../config/famescoreConfig.js";
 import { FRONTEND_PUBLIC_URL } from "../config/socialAuthConfig.js";
 import { createFamefuturesHandoffToken } from "./famefuturesHandoff.js";
@@ -78,7 +79,15 @@ export async function applyToBeTalent(user) {
   const baseSymbol = symbolize(user.name || "TLNT");
   const symbol = await uniqueSymbol(baseSymbol);
 
-  const tier = preview.qualified ? "tradeable" : "futures";
+  // Qualifying via FameScore isn't enough on its own — the talent also needs
+  // to have passed KYC. Don't block application entirely, though: a
+  // qualifying-but-unverified user still lands in "futures" (same as someone
+  // genuinely below threshold) so they can still participate in pledges,
+  // just flagged distinctly so the frontend can point them at KYC instead of
+  // the generic "you're not there yet" copy.
+  const kycVerified = isKycVerified(user);
+  const tier = preview.qualified && kycVerified ? "tradeable" : "futures";
+  const qualifiedPendingKyc = preview.qualified && !kycVerified;
   const { bid, ask } = calcBidAsk(preview.suggestedPrice, 0.5);
 
   // A futures-tier talent gets its share supply sized later, at graduation
@@ -105,6 +114,7 @@ export async function applyToBeTalent(user) {
     fame_score_updated_at: new Date(),
     qualified: preview.qualified,
     qualification_reason: preview.qualificationReason,
+    qualified_pending_kyc: qualifiedPendingKyc,
     estimated_monetization_value: D128(preview.estimatedMonetizationValue),
     next_re_evaluation_at: new Date(Date.now() + RE_EVALUATION_DAYS * 24 * 60 * 60 * 1000),
     tier,
@@ -148,13 +158,22 @@ export async function applyToBeTalent(user) {
 
 async function buildResult(talent, user, { alreadyApplied }) {
   const isTradeable = talent.tier === "tradeable";
-  const message = isTradeable
-    ? `Congratulations! Your FameScore (${talent.fame_score}/100) qualifies you as a tradeable Branded Talent Share on Fame Exchange. Fans can now buy and sell shares of your value.`
-    : `Congratulations! You've been recognized as a Future on Fame Exchange — your current social reach (FameScore ${talent.fame_score}/100) is on its way, and early supporters can now back you before you go fully tradeable.`;
+  const pendingKyc = !isTradeable && talent.qualified_pending_kyc;
+
+  let message;
+  if (isTradeable) {
+    message = `Congratulations! Your FameScore (${talent.fame_score}/100) qualifies you as a tradeable Branded Talent Share on Fame Exchange. Fans can now buy and sell shares of your value.`;
+  } else if (pendingKyc) {
+    message = `Congratulations! Your FameScore (${talent.fame_score}/100) qualifies you to go tradeable — you just need to complete identity verification (KYC) first. Once approved, your shares go live automatically.`;
+  } else {
+    message = `Congratulations! You've been recognized as a Future on Fame Exchange — your current social reach (FameScore ${talent.fame_score}/100) is on its way, and early supporters can now back you before you go fully tradeable.`;
+  }
 
   let redirectUrl;
   if (isTradeable) {
     redirectUrl = `${FRONTEND_PUBLIC_URL}/talent-profile/${talent._id}`;
+  } else if (pendingKyc) {
+    redirectUrl = `${FRONTEND_PUBLIC_URL}/verify-id`;
   } else {
     // Best-effort SSO handoff so they land on famefutures.com already
     // identified — falls back to a plain link if the shared secret isn't

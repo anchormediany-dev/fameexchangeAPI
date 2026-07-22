@@ -31,9 +31,14 @@ router.put(
   verifyOrRejectUserDocument
 );
 
-router.get("/", getUserDocumentsByUserId);
-router.get("/all-user-documents", getAllUserDocuments);
-router.get("/kyc/:id", getKycId);
+router.get("/", auth_key_header, auth_token, getUserDocumentsByUserId);
+router.get(
+  "/all-user-documents",
+  auth_key_header,
+  auth_admin,
+  getAllUserDocuments
+);
+router.get("/kyc/:id", auth_key_header, auth_admin, getKycId);
 //if document reject then delete the previous uplaoded documents
 router.delete(
   "/delete/:documentId",

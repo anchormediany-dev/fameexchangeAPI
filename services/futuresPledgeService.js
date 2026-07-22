@@ -6,11 +6,13 @@ import Position from "../models/positionModel.js";
 import Trade from "../models/tradeModel.js";
 import Wallet from "../models/walletModel.js";
 import Notification from "../models/notificationModel.js";
+import User from "../models/user.js";
 import { calcBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
+import { isKycVerified } from "../config/kycConfig.js";
 import {
   PLEDGE_BONUS_RATE,
   PLEDGE_DEADLINE_DAYS,
@@ -265,9 +267,22 @@ async function fulfillSinglePledge(pledge, talent) {
  * tier no longer "futures" and bails out immediately.
  */
 export async function graduateTalentToTradeable(talent) {
+  // KYC gate — must be checked BEFORE the atomic claim below, since once
+  // tier flips to "tradeable" there's no clean way to un-flip it. A talent
+  // with no linked userId (admin-created, no platform account) is treated
+  // the same as "not verified" — there's nothing to verify against, and
+  // per product decision this is not a bypass.
+  const user = talent.userId ? await User.findById(talent.userId) : null;
+  if (!isKycVerified(user)) {
+    if (!talent.qualified_pending_kyc) {
+      await Talent.updateOne({ _id: talent._id }, { $set: { qualified_pending_kyc: true } });
+    }
+    return { graduated: false, reason: "kyc_not_verified" };
+  }
+
   const claimed = await Talent.findOneAndUpdate(
     { _id: talent._id, tier: "futures" },
-    { $set: { tier: "tradeable", futures_closed: true, graduated_at: new Date() } }
+    { $set: { tier: "tradeable", futures_closed: true, graduated_at: new Date(), qualified_pending_kyc: false } }
   );
   if (!claimed) return { graduated: false, reason: "not_futures_tier" };
 

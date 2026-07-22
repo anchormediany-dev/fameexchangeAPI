@@ -4,9 +4,23 @@ import mongoose from "mongoose";
 const fileSchema = new mongoose.Schema({
   fileUrl: { type: String, required: true },
   fileType: { type: String, required: true },
+  fileName: { type: String, default: "" },
+  mime: { type: String, default: "" },
+  size: { type: Number, default: null },
 
   verifiedAt: { type: Date, default: null },
 });
+
+const addressSchema = new mongoose.Schema(
+  {
+    street: { type: String, default: "" },
+    city: { type: String, default: "" },
+    state: { type: String, default: "" },
+    zipCode: { type: String, default: "" },
+    country: { type: String, default: "US" },
+  },
+  { _id: false }
+);
 
 /** ---------- Message thread (like KYC.conversation) ---------- */
 const messageSchema = new mongoose.Schema(
@@ -73,6 +87,25 @@ const userDocumentSchema = new mongoose.Schema(
     // Message thread with attachments (KYC-style)
     messages: { type: [messageSchema], default: [] },
 
+    docType: {
+      type: String,
+      enum: ["government_id", "proof_of_address", "selfie", "other"],
+      default: "other",
+    },
+
+    // Structured KYC fields
+    govIdType: {
+      type: String,
+      enum: ["passport", "drivers_license", "state_id"],
+      default: null,
+    },
+    govIdImages: { type: [fileSchema], default: [] },
+    selfieImage: { type: fileSchema, default: null },
+    proofOfAddress: { type: fileSchema, default: null },
+    taxId: { type: String, default: null },
+    dateOfBirth: { type: Date, default: null },
+    address: { type: addressSchema, default: null },
+
     status: {
       type: String,
       enum: ["PENDING", "VERIFIED", "REJECTED"],
@@ -108,21 +141,6 @@ userDocumentSchema.methods.touchMessageMeta = function (role) {
     this.userUnread = (this.userUnread || 0) + 1;
   }
 };
-
-userDocumentSchema.pre("save", function (next) {
-  // auto-derive isVerified if all uploads are verified
-  if (this.uploads?.length) {
-    const allVerified = this.uploads.every(
-      (u) => u.verification?.status === "VERIFIED"
-    );
-    this.isVerified = !!allVerified;
-    if (allVerified && this.status !== "VERIFIED") this.status = "VERIFIED";
-  } else {
-    this.isVerified = false;
-    if (this.status === "VERIFIED") this.status = "PENDING";
-  }
-  next();
-});
 
 const UserDocument = mongoose.model("UserDocument", userDocumentSchema);
 export default UserDocument;

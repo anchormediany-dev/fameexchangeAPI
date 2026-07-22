@@ -2,6 +2,12 @@ import UserDocument from "../models/userDocuments.js";
 import mongoose from "mongoose";
 import fs from "fs";
 import User from "../models/user.js";
+import {
+  sendKycSubmittedEmail,
+  sendKycApprovedEmail,
+  sendKycRejectedEmail,
+} from "../utils/emailFormats.js";
+import { FRONTEND_PUBLIC_URL } from "../config/socialAuthConfig.js";
 
 // Utilities
 const getRawFiles = (req) => {
@@ -32,6 +38,11 @@ const splitAttachments = (raw) => {
   return { images, others };
 };
 
+// Structured KYC wizard fields arrive as named file fields (not the generic
+// "images"/"files" used by the message-thread reply flow below).
+const KYC_NAMED_FIELDS = ["govIdFront", "govIdBack", "selfie", "proofOfAddress"];
+const byField = (raw, fieldname) => raw.find((f) => f.fieldname === fieldname);
+
 //upload documents
 export const uploadUserDocuments = async (req, res) => {
   try {
@@ -39,15 +50,42 @@ export const uploadUserDocuments = async (req, res) => {
     if (!userId)
       return res.status(401).json({ success: false, error: "Unauthorized" });
 
-    const { docId, docType, text = "" } = req.body;
+    const {
+      docId,
+      docType,
+      text = "",
+      govIdType,
+      dateOfBirth,
+      taxId,
+      address,
+    } = req.body;
 
     const user = await User.findById(userId);
     if (!user)
       return res.status(404).json({ success: false, error: "User not found" });
 
     const rawFiles = getRawFiles(req);
-    const { images, others } = splitAttachments(rawFiles);
+    const genericRawFiles = rawFiles.filter(
+      (f) => !KYC_NAMED_FIELDS.includes(f.fieldname)
+    );
+    const { images, others } = splitAttachments(genericRawFiles);
     const role = user?.isAdmin ? "admin" : "user";
+
+    // Named KYC wizard fields (only meaningful on the initial submission,
+    // not the docId message-append path below).
+    const govIdFront = byField(rawFiles, "govIdFront");
+    const govIdBack = byField(rawFiles, "govIdBack");
+    const selfieFile = byField(rawFiles, "selfie");
+    const proofFile = byField(rawFiles, "proofOfAddress");
+    const govIdImages = [govIdFront, govIdBack].filter(Boolean).map(mapAttachment);
+    let parsedAddress = null;
+    if (address) {
+      try {
+        parsedAddress = JSON.parse(address);
+      } catch {
+        parsedAddress = null;
+      }
+    }
 
     // Helper: mark pending everywhere
     const markPending = async (doc) => {
@@ -101,12 +139,19 @@ export const uploadUserDocuments = async (req, res) => {
     }
 
     // Create new document thread
-    const uploads = rawFiles
+    const uploads = genericRawFiles
       .map(mapAttachment)
       .map((u) => ({ ...u, verification: { status: "PENDING" } }));
     const doc = await UserDocument.create({
       userId,
       docType: docType || "other",
+      govIdType: govIdType || null,
+      govIdImages,
+      selfieImage: selfieFile ? mapAttachment(selfieFile) : null,
+      proofOfAddress: proofFile ? mapAttachment(proofFile) : null,
+      taxId: taxId || null,
+      dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+      address: parsedAddress,
       uploads,
       messages:
         text || rawFiles.length
@@ -126,6 +171,12 @@ export const uploadUserDocuments = async (req, res) => {
     // set initial meta/unreads, then save once
     doc.touchMessageMeta(role);
     await doc.save();
+
+    // Best-effort — a failed notification email should never block the
+    // submission itself from succeeding.
+    sendKycSubmittedEmail(user.email, { userName: user.name }).catch((err) =>
+      console.error("sendKycSubmittedEmail failed:", err?.message || err)
+    );
 
     return res.status(201).json({ success: true, mode: "created", data: doc });
   } catch (err) {
@@ -168,17 +219,39 @@ export const verifyOrRejectUserDocument = async (req, res) => {
 
       verifiedBy: adminId,
       verifiedAt: new Date(),
-      isKYCVerified: true,
+      // Mirrors the real outcome, not unconditionally true — a rejected
+      // submission must not read back as verified (same fix as the
+      // User.KYC_Verified update just below).
+      isKYCVerified: isApprove,
       rejectionReason: isReject ? rejectionReason : "",
     };
 
     Object.assign(document, updateData);
     await document.save();
 
-    await User.findByIdAndUpdate(document.userId, {
+    const kycUser = await User.findByIdAndUpdate(document.userId, {
       is_verified: isApprove,
-      KYC_Verified: true,
+      KYC_Verified: isApprove,
     });
+
+    // Best-effort — a failed notification email should never block the
+    // approve/reject action itself from succeeding.
+    if (kycUser) {
+      const emailPromise = isApprove
+        ? sendKycApprovedEmail(kycUser.email, {
+            userName: kycUser.name,
+            profileLink: `${FRONTEND_PUBLIC_URL}/`,
+          })
+        : sendKycRejectedEmail(kycUser.email, {
+            userName: kycUser.name,
+            rejectionReason,
+            resubmitLink: `${FRONTEND_PUBLIC_URL}/verify-id`,
+          });
+      emailPromise.catch((err) =>
+        console.error("KYC status email failed:", err?.message || err)
+      );
+    }
+
     return res.status(200).json({
       message: `Document ${isApprove ? "verified" : "rejected"} successfully.`,
       document,
@@ -209,7 +282,7 @@ export const getUserDocumentsByUserId = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      documents: userDoc.documents,
+      documents: userDoc,
     });
   } catch (error) {
     console.error("Get user documents error:", error);
@@ -250,20 +323,27 @@ export const getKycId = async (req, res) => {
 
 export const getAllUserDocuments = async (req, res) => {
   try {
-    const documents = await UserDocument.find()
-      .populate("userId", "name email userRole") // Include user details
-      .lean();
+    const { status, page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
 
-    if (!documents || documents.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No documents found",
-      });
-    }
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+
+    const [documents, total] = await Promise.all([
+      UserDocument.find(filter)
+        .populate("userId", "name email role") // Include user details
+        .sort({ createdAt: -1 })
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .lean(),
+      UserDocument.countDocuments(filter),
+    ]);
 
     return res.status(200).json({
       success: true,
       data: documents,
+      pagination: { page: pageNum, limit: limitNum, total },
     });
   } catch (error) {
     console.error("Get all user documents error:", error);
@@ -276,45 +356,35 @@ export const getAllUserDocuments = async (req, res) => {
 export const deleteRejectedUserDocument = async (req, res) => {
   try {
     const userId = req.user._id; // from auth middleware
-    const { documentId } = req.params; // ID of the document inside the array
+    const { documentId } = req.params; // ID of the UserDocument thread
 
-    const userDocument = await UserDocument.findOne({ userId });
+    const userDocument = await UserDocument.findOne({
+      _id: documentId,
+      userId,
+    });
 
-    if (
-      !userDocument ||
-      !userDocument.documents ||
-      userDocument.documents.length === 0
-    ) {
+    if (!userDocument) {
       return res.status(404).json({ message: "No user documents found." });
     }
 
-    // Find the document
-    const docIndex = userDocument.documents.findIndex(
-      (doc) => doc._id.toString() === documentId
+    // Only the specific rejected upload(s) are removed, so the talent can
+    // re-submit just the bad document without losing an approved one.
+    const beforeCount = userDocument.uploads.length;
+    userDocument.uploads = userDocument.uploads.filter(
+      (u) => u.verification?.status !== "REJECTED"
     );
 
-    if (docIndex === -1) {
-      return res
-        .status(404)
-        .json({ message: "Document not found in your documents." });
-    }
-
-    const targetDoc = userDocument.documents[docIndex];
-
-    // Check if status is REJECTED
-    if (targetDoc.status !== "REJECTED") {
+    if (userDocument.uploads.length === beforeCount) {
       return res
         .status(400)
-        .json({ message: "Only rejected documents can be deleted." });
+        .json({ message: "No rejected documents found to delete." });
     }
 
-    // Remove the document
-    userDocument.documents.splice(docIndex, 1);
     await userDocument.save();
 
     return res.status(200).json({
-      message: "Rejected document deleted successfully.",
-      updatedDocuments: userDocument.documents,
+      message: "Rejected document(s) deleted successfully.",
+      updatedDocuments: userDocument.uploads,
     });
   } catch (error) {
     console.error("Delete error:", error);
