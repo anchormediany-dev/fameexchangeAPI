@@ -77,6 +77,13 @@ const talentSchema = new mongoose.Schema(
     // different copy ("complete KYC to go live" vs. "here's what it takes").
     qualified_pending_kyc: { type: Boolean, default: false },
     estimated_monetization_value: { type: mongoose.Schema.Types.Decimal128, default: null },
+    // Notional brand-equity valuation (services/valuationService.js) — a
+    // separate, correctly-scaled figure from estimated_monetization_value
+    // above, which keeps its original (score-internal, not user-facing)
+    // meaning. This is what actually sizes shares/listing fees going
+    // forward — see shareAllocationService.js / feeConfig.js callers.
+    valuation: { type: mongoose.Schema.Types.Decimal128, default: null },
+    valuation_breakdown: { type: mongoose.Schema.Types.Mixed, default: null },
     next_re_evaluation_at: { type: Date, default: null },
     // Set the first time a TRADEABLE talent's recalculation shows them no
     // longer qualified. Cleared if they requalify before the grace period
@@ -104,7 +111,7 @@ talentSchema.methods.toDisplay = function () {
     "current_price", "bid_price", "ask_price", "spread",
     "liquidity_factor", "volatility_multiplier", "min_price", "max_price",
     "max_move_per_trade", "min_order_amount", "max_order_amount", "previous_close_price",
-    "total_pledged", "estimated_monetization_value", "initial_share_price",
+    "total_pledged", "estimated_monetization_value", "valuation", "initial_share_price",
   ];
   for (const field of decimalFields) {
     if (obj[field]) obj[field] = parseFloat(obj[field].toString());

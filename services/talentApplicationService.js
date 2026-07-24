@@ -3,7 +3,7 @@ import Talent from "../models/talentModel.js";
 import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import Notification from "../models/notificationModel.js";
 import { previewValuation } from "./famescoreService.js";
-import { calcBidAsk } from "./tradingService.js";
+import { calcBidAsk, calcPoolBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
@@ -88,25 +88,39 @@ export async function applyToBeTalent(user) {
   const kycVerified = isKycVerified(user);
   const tier = preview.qualified && kycVerified ? "tradeable" : "futures";
   const qualifiedPendingKyc = preview.qualified && !kycVerified;
-  const { bid, ask } = calcBidAsk(preview.suggestedPrice, 0.5);
 
   // A futures-tier talent gets its share supply sized later, at graduation
   // (see futuresPledgeService.graduateTalentToTradeable) — not here, since
-  // "futures" isn't tradeable yet and estimatedMonetizationValue will likely
-  // be different (hopefully higher) by the time they actually qualify.
+  // "futures" isn't tradeable yet and valuation will likely be different
+  // (hopefully higher) by the time they actually qualify.
   const shareAllocation = tier === "tradeable"
-    ? computeShareAllocation(preview.estimatedMonetizationValue)
+    ? computeShareAllocation(preview.valuation)
     : null;
+
+  // Tradeable: the actual trading price is anchored to the discrete-share
+  // model's initial_share_price (valuation / share count), quoted via the
+  // same pool-based bid/ask every subsequent trade uses — NOT the FameScore
+  // percentile curve's suggestedPrice, which has no relationship to real
+  // share economics. Futures (no shares yet): suggestedPrice is still the
+  // right reference/preview price to show.
+  const anchorPrice = shareAllocation ? shareAllocation.initialSharePrice : preview.suggestedPrice;
+  const { bid, ask } = shareAllocation
+    ? calcPoolBidAsk(anchorPrice, {
+        shares_in_liquidity_pool: shareAllocation.sharesInLiquidityPool,
+        shares_available_in_pool: shareAllocation.sharesInLiquidityPool,
+        spread: 0.5,
+      })
+    : calcBidAsk(anchorPrice, 0.5);
 
   const talent = await Talent.create({
     userId: user._id,
     name: user.name,
     slug,
     symbol,
-    current_price: D128(preview.suggestedPrice),
+    current_price: D128(anchorPrice),
     bid_price: D128(bid),
     ask_price: D128(ask),
-    previous_close_price: D128(preview.suggestedPrice),
+    previous_close_price: D128(anchorPrice),
     min_price: D128(minPrice),
     max_price: D128(maxPrice),
     fame_score: preview.fameScore,
@@ -116,6 +130,8 @@ export async function applyToBeTalent(user) {
     qualification_reason: preview.qualificationReason,
     qualified_pending_kyc: qualifiedPendingKyc,
     estimated_monetization_value: D128(preview.estimatedMonetizationValue),
+    valuation: D128(preview.valuation),
+    valuation_breakdown: preview.valuationBreakdown,
     next_re_evaluation_at: new Date(Date.now() + RE_EVALUATION_DAYS * 24 * 60 * 60 * 1000),
     tier,
     futures_started_at: tier === "futures" ? new Date() : null,
@@ -131,7 +147,7 @@ export async function applyToBeTalent(user) {
 
   const priceHistoryEntry = await TalentPriceHistory.create({
     talent_id: talent._id,
-    price: D128(preview.suggestedPrice),
+    price: D128(anchorPrice),
     bid_price: D128(bid),
     ask_price: D128(ask),
     volume: D128(0),
@@ -144,7 +160,7 @@ export async function applyToBeTalent(user) {
   // (a futures-tier talent gets charged later, at graduation, if it ever
   // happens — never for simply applying).
   if (tier === "tradeable") {
-    const listingFee = calculateListingFee(preview.estimatedMonetizationValue);
+    const listingFee = calculateListingFee(preview.valuation);
     await recordRevenueEvent({
       event_type: "listing_fee",
       amount: listingFee,

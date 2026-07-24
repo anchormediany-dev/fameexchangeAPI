@@ -1,13 +1,14 @@
 import mongoose from "mongoose";
 import Stripe from "stripe";
 import Talent from "../models/talentModel.js";
+import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import FuturesPledge from "../models/futuresPledgeModel.js";
 import Position from "../models/positionModel.js";
 import Trade from "../models/tradeModel.js";
 import Wallet from "../models/walletModel.js";
 import Notification from "../models/notificationModel.js";
 import User from "../models/user.js";
-import { calcBidAsk } from "./tradingService.js";
+import { calcPoolBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
@@ -287,19 +288,54 @@ export async function graduateTalentToTradeable(talent) {
   if (!claimed) return { graduated: false, reason: "not_futures_tier" };
 
   // Fixed share supply, sized exactly once — the moment this talent actually
-  // becomes tradeable (see services/shareAllocationService.js).
+  // becomes tradeable (see services/shareAllocationService.js). Relies on
+  // `valuation` already being current via the nightly recalculateAllTalentValuations()
+  // cron, which is NOT tier-filtered — it re-marks futures-tier talents too.
+  // d() defaults a still-null valuation (e.g. graduation on the same day a
+  // talent was created, before the first cron run) to 0, which degrades
+  // gracefully to the MIN_TOTAL_SHARES floor rather than crashing.
   const { totalShares, sharesInLiquidityPool, initialSharePrice } = computeShareAllocation(
-    d(claimed.estimated_monetization_value)
+    d(claimed.valuation)
   );
   claimed.total_shares = totalShares;
   claimed.shares_in_liquidity_pool = sharesInLiquidityPool;
   claimed.shares_available_in_pool = sharesInLiquidityPool;
   claimed.initial_share_price = D128(initialSharePrice);
+
+  // Anchor the actual trading price to the share model's initial_share_price
+  // (valuation / share count) — NOT whatever current_price was carrying over
+  // from the futures-tier FameScore percentile curve, which has no
+  // relationship to real share economics. Must happen BEFORE pledge
+  // fulfillment below: fulfillSinglePledge() converts each pledge's dollar
+  // amount into units using talent.current_price as the graduation price.
+  const { bid, ask } = calcPoolBidAsk(initialSharePrice, {
+    shares_in_liquidity_pool: sharesInLiquidityPool,
+    shares_available_in_pool: sharesInLiquidityPool,
+    spread: claimed.spread,
+  });
+  claimed.current_price = D128(initialSharePrice);
+  claimed.bid_price = D128(bid);
+  claimed.ask_price = D128(ask);
+  claimed.previous_close_price = D128(initialSharePrice);
   await claimed.save();
+
+  // Records the real listing price (not the stale futures-tier percentile
+  // price a recalculation may have just written moments earlier in the same
+  // pass) so the price chart reflects what shares actually opened at.
+  const graduationPriceHistoryEntry = await TalentPriceHistory.create({
+    talent_id: claimed._id,
+    price: D128(initialSharePrice),
+    bid_price: D128(bid),
+    ask_price: D128(ask),
+    volume: D128(0),
+    source_type: "system",
+    recorded_at: new Date(),
+  });
+  await appendLedgerEntry("talent_price_history", graduationPriceHistoryEntry._id, graduationPriceHistoryEntry.toObject());
 
   // Listing fee — charged exactly once, right here, the moment this talent
   // actually goes tradeable (never charged for simply sitting futures-tier).
-  const listingFee = calculateListingFee(d(claimed.estimated_monetization_value));
+  const listingFee = calculateListingFee(d(claimed.valuation));
   await recordRevenueEvent({
     event_type: "listing_fee",
     amount: listingFee,
@@ -308,7 +344,6 @@ export async function graduateTalentToTradeable(talent) {
   });
 
   const pendingPledges = await FuturesPledge.find({ talent_id: claimed._id, status: "pending" });
-  const { bid } = calcBidAsk(claimed.current_price, claimed.spread);
 
   const fulfillments = [];
   for (const pledge of pendingPledges) {

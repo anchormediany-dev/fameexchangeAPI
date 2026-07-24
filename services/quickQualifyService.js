@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import User from "../models/user.js";
 import Networth from "../models/networth.js";
-import sendEmail from "../utils/helper.js";
+import { sendClaimAccountEmail } from "../utils/emailFormats.js";
 import { getAllPlatformsData } from "../controllers/allPlatformsController.js";
 import { applyToBeTalent } from "./talentApplicationService.js";
 
@@ -100,7 +100,7 @@ export async function quickQualify({ name, email, socials = {} }) {
   user.OTP_code = String(otp);
   user.otp_expiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
   await user.save();
-  await sendEmail(user.email, "claim_account", String(otp));
+  await sendClaimAccountEmail(user.email, { otp: String(otp) });
 
   const token = await user.generateToken();
 

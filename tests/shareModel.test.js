@@ -3,36 +3,47 @@ import assert from "node:assert/strict";
 import { calcPoolBidAsk, calcPoolPriceImpact } from "../services/tradingService.js";
 import { computeShareAllocation } from "../services/shareAllocationService.js";
 
-// ── computeShareAllocation ──────────────────────────────────────────
+// ── computeShareAllocation (tiered target share price) ───────────────
 
-test("computeShareAllocation: mid-size monetization value lands near the target anchor price", () => {
-  // $50,000/mo -> total_shares = 50000/10 = 5000, clamped up to MIN_TOTAL_SHARES=10000
-  const result = computeShareAllocation(50000);
-  assert.equal(result.totalShares, 10000); // hit the floor
-  assert.equal(result.sharesInLiquidityPool, Math.round(10000 * 0.1125));
-  // initial_share_price = (value * 2) / totalShares = 100000 / 10000 = 10
+test("computeShareAllocation: valuation in the $50K-$200K tier targets a $10/share price", () => {
+  const result = computeShareAllocation(100000);
+  // targetPrice=10 (100000 < 200000 tier ceiling), rawShares=100000/10=10000, already a multiple of 500
+  assert.equal(result.targetSharePrice, 10);
+  assert.equal(result.totalShares, 10000);
   assert.equal(result.initialSharePrice, 10);
+  assert.equal(result.sharesInLiquidityPool, Math.round(10000 * 0.1125)); // flat 11.25%, unchanged
 });
 
-test("computeShareAllocation: large monetization value, no clamping, price lands near 2x anchor", () => {
-  // $1,000,000/mo -> total_shares = 100000 (above MIN, below MAX, no clamp)
-  const result = computeShareAllocation(1000000);
-  assert.equal(result.totalShares, 100000);
-  assert.equal(result.initialSharePrice, 20); // (1000000*2)/100000 = 20 = 2x TARGET_ANCHOR_PRICE
+test("computeShareAllocation: valuation in the $1M-$5M tier targets a $50/share price, differentiated from a smaller talent", () => {
+  const result = computeShareAllocation(2000000);
+  assert.equal(result.targetSharePrice, 50);
+  assert.equal(result.totalShares, 40000);
+  assert.equal(result.initialSharePrice, 50);
+  // Confirms the fix: a $2M talent and a $100K talent no longer converge on
+  // the same share price the flat-anchor approach produced.
+  const smaller = computeShareAllocation(100000);
+  assert.notEqual(result.initialSharePrice, smaller.initialSharePrice);
 });
 
-test("computeShareAllocation: zero/negative value floors to MIN_TOTAL_SHARES with a $0.10 price floor", () => {
+test("computeShareAllocation: tier boundaries are exclusive on the upper bound", () => {
+  assert.equal(computeShareAllocation(49999).targetSharePrice, 5);
+  assert.equal(computeShareAllocation(50000).targetSharePrice, 10); // exactly at boundary falls into the next tier
+  assert.equal(computeShareAllocation(199999).targetSharePrice, 10);
+  assert.equal(computeShareAllocation(200000).targetSharePrice, 20);
+});
+
+test("computeShareAllocation: zero/negative value floors to MIN_TOTAL_SHARES with the new $1.00 price floor", () => {
   const zero = computeShareAllocation(0);
   assert.equal(zero.totalShares, 10000);
-  assert.equal(zero.initialSharePrice, 0.1);
+  assert.equal(zero.initialSharePrice, 1.0);
 
   const negative = computeShareAllocation(-500);
   assert.equal(negative.totalShares, 10000);
-  assert.equal(negative.initialSharePrice, 0.1);
+  assert.equal(negative.initialSharePrice, 1.0);
 });
 
 test("computeShareAllocation: extremely large value clamps at MAX_TOTAL_SHARES", () => {
-  const result = computeShareAllocation(1_000_000_000); // way beyond MAX_TOTAL_SHARES=10,000,000 anchor math
+  const result = computeShareAllocation(2_000_000_000); // $2B, top $100/share tier, would be 20M shares uncapped
   assert.equal(result.totalShares, 10000000);
 });
 

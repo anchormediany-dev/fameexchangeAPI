@@ -3,7 +3,7 @@ import Notification from "../models/notificationModel.js";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
 import { createSessionPayment } from "../controllers/billingController.js";
 import User from "../models/user.js";
-import { sendMail } from "../utils/mailer.js";
+import { sendMail } from "../utils/emailFormats.js";
 import Session from "../models/sessionModel.js";
 
 // Formats a value to US date (MM/DD/YYYY)
@@ -154,7 +154,7 @@ export const createFanRequest = async (req, res) => {
       `;
 
     // Send email to fan
-    await sendMail(checkUser.email, subject, message);
+    await sendMail({ to: checkUser.email, subject, html: message });
     res.status(201).json({
       success: true,
       data: {
@@ -439,7 +439,7 @@ export const rescheduleFanRequest = async (req, res) => {
       `;
 
     // Send email to fan
-    await sendMail(checkUser.email, subject, message);
+    await sendMail({ to: checkUser.email, subject, html: message });
 
     await request.save();
 

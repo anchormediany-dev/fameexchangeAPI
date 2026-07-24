@@ -4,7 +4,7 @@ import TalentPriceHistory from "../models/talentPriceHistoryModel.js";
 import SocialConnection from "../models/socialConnection.js";
 import Networth from "../models/networth.js";
 import {
-  calcBidAsk,
+  calcPoolBidAsk,
   clampPrice,
   enforceMaxMovePerTrade,
   enforceDailyLimit,
@@ -12,6 +12,7 @@ import {
 import { appendLedgerEntry } from "./ledgerService.js";
 import { graduateTalentToTradeable } from "./futuresPledgeService.js";
 import { writeSocialSnapshots, computeGrowthRate } from "./socialSnapshotService.js";
+import { computeTalentValuation } from "./valuationService.js";
 import {
   platformMultiplierMidpoint,
   QUALIFICATION_THRESHOLDS,
@@ -233,6 +234,22 @@ export function priceFromFameScore(fameScore, minPrice, maxPrice) {
 }
 
 /**
+ * The re-mark target price for recalculateTalentValuation() — pulled out as
+ * a pure function so the branch is unit-testable without a DB. A tradeable
+ * talent has a FIXED share supply, so its fundamental re-mark target is its
+ * market-cap-consistent price (valuation / total_shares) — the FameScore
+ * percentile curve has no relationship to real share economics once shares
+ * actually exist. A futures-tier talent (no shares yet) still uses the
+ * percentile curve as its reference/preview price ahead of listing.
+ */
+export function remarkTargetPrice({ tier, totalShares, valuation, fameScore, minPrice, maxPrice }) {
+  if (tier === "tradeable" && totalShares) {
+    return valuation / totalShares;
+  }
+  return priceFromFameScore(fameScore, minPrice, maxPrice);
+}
+
+/**
  * Computes a talent's current FameScore + suggested price WITHOUT writing
  * anything — used to preview a valuation before listing a talent, or to
  * inspect what a re-mark would do. No talentId yet at this point (no Talent
@@ -242,12 +259,15 @@ export async function previewValuation(userId, minPrice = 1.0, maxPrice = 100000
   const signal = await collectSocialSignal(userId);
   const scoreResult = calculateFameScore(signal);
   const suggestedPrice = priceFromFameScore(scoreResult.fameScore, minPrice, maxPrice);
+  const valuationResult = computeTalentValuation(signal, scoreResult.fameScore);
   return {
     fameScore: scoreResult.fameScore,
     breakdown: scoreResult.platformBreakdown,
     qualified: scoreResult.qualified,
     qualificationReason: scoreResult.qualificationReason,
     estimatedMonetizationValue: scoreResult.estimatedMonetizationValue,
+    valuation: valuationResult.valuation,
+    valuationBreakdown: valuationResult,
     suggestedPrice,
   };
 }
@@ -271,8 +291,16 @@ export async function recalculateTalentValuation(talentId) {
   const signal = await collectSocialSignal(talent.userId, talent._id);
   const scoreResult = calculateFameScore(signal);
   const fameScore = scoreResult.fameScore;
+  const valuationResult = computeTalentValuation(signal, fameScore);
 
-  const targetPrice = priceFromFameScore(fameScore, d(talent.min_price), d(talent.max_price));
+  const targetPrice = remarkTargetPrice({
+    tier: talent.tier,
+    totalShares: talent.total_shares,
+    valuation: valuationResult.valuation,
+    fameScore,
+    minPrice: d(talent.min_price),
+    maxPrice: d(talent.max_price),
+  });
   const currentPrice = d(talent.current_price);
 
   const damped = currentPrice + (targetPrice - currentPrice) * REMARK_DAMPING_FACTOR;
@@ -280,7 +308,10 @@ export async function recalculateTalentValuation(talentId) {
   newPrice = enforceDailyLimit(newPrice, talent.previous_close_price, talent.max_daily_move_percent);
   newPrice = +clampPrice(newPrice, talent).toFixed(4);
 
-  const { bid, ask } = calcBidAsk(newPrice, talent.spread);
+  // calcPoolBidAsk gracefully falls back to the flat spread for a talent
+  // with no pool yet (futures-tier) — same function every live quote uses,
+  // no need to branch here.
+  const { bid, ask } = calcPoolBidAsk(newPrice, talent);
 
   talent.current_price = D128(newPrice);
   talent.bid_price = D128(bid);
@@ -291,6 +322,8 @@ export async function recalculateTalentValuation(talentId) {
   talent.qualified = scoreResult.qualified;
   talent.qualification_reason = scoreResult.qualificationReason;
   talent.estimated_monetization_value = D128(scoreResult.estimatedMonetizationValue);
+  talent.valuation = D128(valuationResult.valuation);
+  talent.valuation_breakdown = valuationResult;
   talent.next_re_evaluation_at = new Date(Date.now() + RE_EVALUATION_DAYS * 24 * 60 * 60 * 1000);
 
   // Demotion + grace period — only applies to an already-tradeable talent.
@@ -353,6 +386,7 @@ export async function recalculateTalentValuation(talentId) {
     breakdown: scoreResult.platformBreakdown,
     qualified: scoreResult.qualified,
     qualification_reason: scoreResult.qualificationReason,
+    valuation: valuationResult.valuation,
     graduation,
     previous_price: currentPrice,
     target_price: targetPrice,

@@ -1,6 +1,6 @@
 import User from "../models/user.js";
 import { OAuth2Client } from "google-auth-library";
-import sendEmail from "../utils/helper.js";
+import { sendOtpEmail, sendResetLinkEmail } from "../utils/emailFormats.js";
 import { signupSchema } from "../validators/user.js";
 import jwt from "jsonwebtoken";
 import { quickQualify as runQuickQualify } from "../services/quickQualifyService.js";
@@ -46,7 +46,7 @@ const signup = async (req, res) => {
     data.OTP_code = Math.floor(1000 + Math.random() * 9000).toString();
 
     // ✅ Attempt to send OTP email first
-    const emailSent = await sendEmail(data.email, "otp", data.OTP_code);
+    const emailSent = await sendOtpEmail(data.email, { otp: data.OTP_code });
 
     if (!emailSent) {
       return res.status(500).json({
@@ -221,7 +221,7 @@ const resendOTP = async (req, res) => {
     }
     await user.save();
 
-    const emailSent = await sendEmail(user.email, "otp", otp.toString()); // assuming sendEmail(user, code)
+    const emailSent = await sendOtpEmail(user.email, { otp: otp.toString() });
 
     return res.status(200).json({
       message: emailSent ? "OTP sent successfully" : "Failed to send OTP email",
@@ -250,7 +250,7 @@ export const forgotPassword = async (req, res) => {
     user.OTP_code = otp;
     user.otp_expiry = otpExpiry;
 
-    await sendEmail(user.email, "resetlink", otp.toString());
+    await sendResetLinkEmail(user.email, { otp: otp.toString() });
     await user.save();
 
     res.status(200).json({

@@ -2,7 +2,7 @@ import FanInverseRequestModel from "../models/fanInverseRequestModel.js";
 import Notification from "../models/notificationModel.js";
 import TalentConfirmation from "../models/talentConfirmationModel.js";
 import User from "../models/user.js";
-import { sendMail } from "../utils/mailer.js";
+import { sendMail } from "../utils/emailFormats.js";
 
 export const confirmRequest = async (req, res) => {
   try {
@@ -147,15 +147,15 @@ export const confirmRequest = async (req, res) => {
       ]);
 
       // Fan email
-      await sendMail(
-        fanUserData.email,
-        "Session Confirmed",
-        `
+      await sendMail({
+        to: fanUserData.email,
+        subject: "Session Confirmed",
+        html: `
           <p>Hi ${fanUserData.name},</p>
           <p>Your request with ${talentUser.name} has been <strong>confirmed</strong>.</p>
           <p><strong>Date:</strong> ${confirmedDate}<br><strong>Time:</strong> ${time}<br><strong>Location:</strong> ${location}</p>
-        `
-      );
+        `,
+      });
     } else {
       // Declined scenario
       const declineMsg = declineReason ? ` Reason: ${declineReason}` : "";
@@ -181,10 +181,10 @@ export const confirmRequest = async (req, res) => {
       ]);
 
       // Email
-      await sendMail(
-        fanUserData.email,
-        "Session Declined",
-        `
+      await sendMail({
+        to: fanUserData.email,
+        subject: "Session Declined",
+        html: `
           <p>Hi ${fanUserData.name},</p>
           <p>Your request with ${
             talentUser.name
@@ -195,8 +195,8 @@ export const confirmRequest = async (req, res) => {
               : ""
           }
           <p>You may request a different time or choose another talent.</p>
-        `
-      );
+        `,
+      });
     }
 
     return res.status(201).json({ success: true, data: confirmation });
@@ -414,7 +414,7 @@ export const rescheduleTalentConfirmation = async (req, res) => {
       <p>Thanks,<br/>Fame Exchange Team</p>
     `;
 
-    await sendMail(fanUser.email, subject, message);
+    await sendMail({ to: fanUser.email, subject, html: message });
 
     res.json({
       success: true,

@@ -18,12 +18,33 @@ export const MARKET_MAKING = {
   maxSpreadPercent: 0.05, // 5% — half-spread width when the pool is empty
 };
 
-// Reference price we're aiming for at listing — total_shares is sized so
-// that (at the initial monetization-value-derived price) shares trade near
-// this figure, similar to how real stocks get priced/split into a "normal"
-// range. Only a rough anchor: MIN/MAX_TOTAL_SHARES below dominate at the
-// extremes (a very small or very large monetization value).
+// Superseded by SHARE_PRICE_TIERS below (a flat anchor price couldn't
+// differentiate a small creator from a mega-creator once valuations were
+// corrected to a realistic scale — see valuationService.js). Kept declared,
+// not removed, matching this codebase's existing precedent for retired
+// pricing-model constants (liquidity_factor/volatility_multiplier).
 export const TARGET_ANCHOR_PRICE = 10;
 
+// Target share price by valuation band — total_shares is sized so shares
+// trade near the tier's target price at listing, with higher-valuation
+// talents landing in a higher (but still "normal-looking") per-share price
+// band, similar to how real stocks get priced/split. `max` is exclusive
+// upper bound of the valuation this tier applies to.
+export const SHARE_PRICE_TIERS = [
+  { max: 50000, targetPrice: 5 },
+  { max: 200000, targetPrice: 10 },
+  { max: 1000000, targetPrice: 20 },
+  { max: 5000000, targetPrice: 50 },
+  { max: Infinity, targetPrice: 100 },
+];
+
+export function targetSharePriceFor(valuation) {
+  const tier = SHARE_PRICE_TIERS.find((t) => valuation < t.max);
+  return (tier || SHARE_PRICE_TIERS[SHARE_PRICE_TIERS.length - 1]).targetPrice;
+}
+
+// Outer safety clamp, applied after tier-based sizing regardless of which
+// tier a talent lands in — also cleanly handles a $0 valuation (rounds to 0
+// shares, then floors to MIN_TOTAL_SHARES) with no special-case branch.
 export const MIN_TOTAL_SHARES = 10000;
 export const MAX_TOTAL_SHARES = 10000000;

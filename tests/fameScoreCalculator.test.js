@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calculateFameScore } from "../services/famescoreService.js";
+import { calculateFameScore, remarkTargetPrice } from "../services/famescoreService.js";
 
 test("single-platform, high score, but below the elevated single-platform bar: does NOT qualify", () => {
   // 100K Instagram followers, 3% engagement, growth, verified — maxes out
@@ -91,4 +91,48 @@ test("empty platforms array: zero score, not qualified, no crash", () => {
   assert.equal(result.qualified, false);
   assert.equal(result.platformCount, 0);
   assert.equal(result.recommendation, "famefutures_routing");
+});
+
+// ── remarkTargetPrice ────────────────────────────────────────────────────
+// Regression coverage for the price-anchor bug: a tradeable talent's
+// current_price used to be re-marked toward the FameScore percentile curve
+// (priceFromFameScore) even after real shares existed, completely
+// disconnected from the discrete-share model's valuation/total_shares
+// economics — making shares practically unbuyable (e.g. $79K/share for a
+// talent whose real share price should have been ~$5.59).
+
+test("remarkTargetPrice: tradeable talent with real shares targets valuation/total_shares, not the percentile curve", () => {
+  const target = remarkTargetPrice({
+    tier: "tradeable",
+    totalShares: 10000,
+    valuation: 55852.5,
+    fameScore: 100, // would otherwise curve toward max_price
+    minPrice: 1,
+    maxPrice: 100000,
+  });
+  assert.equal(target, 5.58525); // 55852.5 / 10000 -- nowhere near the percentile-curve's ~100000
+});
+
+test("remarkTargetPrice: futures-tier talent (no shares yet) still uses the FameScore percentile curve", () => {
+  const target = remarkTargetPrice({
+    tier: "futures",
+    totalShares: null,
+    valuation: 55852.5,
+    fameScore: 100,
+    minPrice: 1,
+    maxPrice: 100000,
+  });
+  assert.equal(target, 100000); // fameScore 100 -> curve saturates at max_price, no shares to anchor to yet
+});
+
+test("remarkTargetPrice: tradeable talent with total_shares somehow still null falls back to the percentile curve (defensive, shouldn't happen in practice)", () => {
+  const target = remarkTargetPrice({
+    tier: "tradeable",
+    totalShares: null,
+    valuation: 55852.5,
+    fameScore: 50,
+    minPrice: 1,
+    maxPrice: 100000,
+  });
+  assert.ok(target > 0 && !Number.isNaN(target));
 });

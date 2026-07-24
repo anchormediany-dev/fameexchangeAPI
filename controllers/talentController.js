@@ -4,7 +4,7 @@ import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import Position from "../models/positionModel.js";
 import User from "../models/user.js";
 import SiteSettings from "../models/siteSettingsModel.js";
-import { getQuote, getTalentChart, getTalentStats, calcBidAsk } from "../services/tradingService.js";
+import { getQuote, getTalentChart, getTalentStats, calcBidAsk, calcPoolBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
 import {
   previewValuation,
@@ -324,8 +324,6 @@ export const createTalent = async (req, res) => {
       currentPrice = fameScoreResult.suggestedPrice;
     }
 
-    const { bid, ask } = calcBidAsk(currentPrice, data.spread || 0.5);
-
     // A talent only gets gated into the futures tier on FameScore grounds
     // when we actually know a score for them (i.e. auto_price was used).
     // Separately — and unconditionally, even for manually admin-priced
@@ -347,9 +345,28 @@ export const createTalent = async (req, res) => {
     let shareAllocation = null;
     if (tier === "tradeable") {
       shareAllocation = fameScoreResult
-        ? computeShareAllocation(fameScoreResult.estimatedMonetizationValue)
+        ? computeShareAllocation(fameScoreResult.valuation)
         : { ...computeShareAllocation(0), initialSharePrice: currentPrice };
     }
+
+    // When going tradeable off an auto-priced FameScore result, anchor the
+    // actual trading price to the share model's initial_share_price
+    // (valuation / share count) instead of the percentile-curve
+    // suggestedPrice, which has no relationship to real share economics. A
+    // manually admin-priced talent already uses its own current_price as
+    // initialSharePrice (see the shareAllocation fallback above), so this is
+    // a no-op for that branch — currentPrice stays whatever the admin set.
+    if (shareAllocation && fameScoreResult) {
+      currentPrice = shareAllocation.initialSharePrice;
+    }
+
+    const { bid, ask } = shareAllocation
+      ? calcPoolBidAsk(currentPrice, {
+          shares_in_liquidity_pool: shareAllocation.sharesInLiquidityPool,
+          shares_available_in_pool: shareAllocation.sharesInLiquidityPool,
+          spread: data.spread || 0.5,
+        })
+      : calcBidAsk(currentPrice, data.spread || 0.5);
 
     const talent = await Talent.create({
       ...data,
@@ -376,6 +393,8 @@ export const createTalent = async (req, res) => {
             qualified: fameScoreResult.qualified,
             qualification_reason: fameScoreResult.qualificationReason,
             estimated_monetization_value: D128(fameScoreResult.estimatedMonetizationValue),
+            valuation: D128(fameScoreResult.valuation),
+            valuation_breakdown: fameScoreResult.valuationBreakdown,
           }
         : {}),
       ...(shareAllocation
@@ -407,7 +426,7 @@ export const createTalent = async (req, res) => {
     // Listing fee — charged exactly once, only if this talent is tradeable
     // right away (matches the self-serve apply flow's rule).
     if (tier === "tradeable") {
-      const listingFee = calculateListingFee(fameScoreResult ? fameScoreResult.estimatedMonetizationValue : 0);
+      const listingFee = calculateListingFee(fameScoreResult ? fameScoreResult.valuation : 0);
       await recordRevenueEvent({
         event_type: "listing_fee",
         amount: listingFee,

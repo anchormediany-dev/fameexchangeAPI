@@ -1,30 +1,28 @@
-// utils/emailer.js
-import nodemailer from "nodemailer";
+// utils/emailFormats.js — single shared email module. Every transactional
+// email in this app (auth OTPs, password reset, KYC status, session/ticket
+// reminders, talent-confirmation notices) goes through sendMail() below,
+// via Resend. This replaces three separate ad-hoc nodemailer/Gmail
+// implementations that used to exist (utils/mailer.js, utils/helper.js's
+// sendEmail, and this file's old transporter) — Gmail SMTP kept failing
+// with "WebLoginRequired" and wasn't meant for transactional volume anyway.
+import { Resend } from "resend";
 
-/* ===================== Transport (env-driven) ===================== */
-// Required env (pick one style):
-//  - Gmail-style:   SMTP_SERVICE=gmail, SMTP_USER=you@gmail.com, SMTP_PASS=app_password
-//  - Generic SMTP:  SMTP_HOST=smtp.example.com, SMTP_PORT=587, SMTP_USER=user, SMTP_PASS=pass, SMTP_SECURE=false
-// Optional:
-//  - MAIL_FROM_EMAIL (default: SMTP_USER)
-//  - MAIL_FROM_NAME  (default: brand passed into sender)
+/* ===================== Client (env-driven) ===================== */
+// Required: RESEND_API_KEY (from resend.com).
+// Optional: MAIL_FROM_EMAIL (must be on a domain verified with Resend —
+// falls back to Resend's sandbox sender otherwise), MAIL_FROM_NAME.
 
-let _cachedTx = null;
-export function getTransporter() {
-  if (_cachedTx) return _cachedTx;
+let _client = null;
+export function getResendClient() {
+  if (_client) return _client;
 
-  const user = process.env.NODEMAILER_EMAIL;
-  const pass = process.env.NODEMAILER_PASSCODE;
-  if (!user || !pass) {
-    throw new Error("Missing NODEMAILER_EMAIL or NODEMAILER_PASSCODE env.");
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing RESEND_API_KEY env.");
   }
 
-  _cachedTx = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
-
-  return _cachedTx;
+  _client = new Resend(apiKey);
+  return _client;
 }
 
 /* ===================== Small utils ===================== */
@@ -213,6 +211,91 @@ ${brand} Team`;
   return { subject, preheader, text, html };
 }
 
+/** OTP CODE (subject, preheader, text, html) */
+export function getOtpEmail({ brand = "The Fame Exchange", otp } = {}) {
+  const subject = "Your OTP Code";
+  const preheader = "Your one-time verification code.";
+
+  const text = `Hi there,
+
+Your OTP code for sign up is: ${otp}
+
+This code will expire in a few minutes. Please do not share it with anyone.
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hi there,</p>
+  <p>Your OTP code for sign up is:</p>
+  <div style="${cardStyles}"><h2 style="margin:0;">${esc(otp)}</h2></div>
+  <p>This code will expire in a few minutes. Please do not share it with anyone.</p>
+  <p>Thanks,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
+/** RESET PASSWORD LINK/CODE (subject, preheader, text, html) */
+export function getResetLinkEmail({ brand = "The Fame Exchange", otp } = {}) {
+  const subject = "Reset Your Password";
+  const preheader = "Use this code to reset your password.";
+
+  const text = `Hello,
+
+We received a request to reset your password. Here's your code:
+
+${otp}
+
+This code will expire in 1 hour. If you didn't request a password reset, please ignore this email.
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hello,</p>
+  <p>We received a request to reset your password. Here's your code:</p>
+  <div style="${cardStyles}"><h2 style="margin:0;">${esc(otp)}</h2></div>
+  <p>This code will expire in 1 hour. If you didn't request a password reset, please ignore this email.</p>
+  <p>Best,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
+/** CLAIM ACCOUNT (subject, preheader, text, html) */
+export function getClaimAccountEmail({ brand = "The Fame Exchange", otp } = {}) {
+  const subject = "Your FameExchange Account is Ready — Set Your Password";
+  const preheader = "Your FameScore was calculated and your account is ready.";
+
+  const text = `Hi there,
+
+We just calculated your FameScore and created your FameExchange account so your result is saved.
+
+Use this code on the "Reset Password" screen (with this email address) to set your own password and log in anytime:
+
+${otp}
+
+If you didn't request this, you can safely ignore this email.
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(preheader)}</div>
+  <p>Hi there,</p>
+  <p>We just calculated your FameScore and created your FameExchange account so your result is saved.</p>
+  <p>Use this code on the "Reset Password" screen (with this email address) to set your own password and log in anytime:</p>
+  <div style="${cardStyles}"><h2 style="margin:0;">${esc(otp)}</h2></div>
+  <p>If you didn't request this, you can safely ignore this email.</p>
+  <p>Thanks,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
 /** KYC SUBMITTED (subject, preheader, text, html) */
 export function getKycSubmittedEmail({ brand = "The Fame Exchange", userName = "there" } = {}) {
   const subject = "Your Fame Exchange Verification is Under Review";
@@ -306,28 +389,54 @@ ${brand} Team`;
   return { subject, preheader, text, html };
 }
 
-/* ===================== SEND HELPERS ===================== */
-async function sendMail({ brand, to, subject, html, text, replyTo, headers }) {
+/* ===================== SEND HELPER (raw — also used directly for
+   one-off HTML emails that don't go through a get*Email() template) ===== */
+export async function sendMail({ brand, to, subject, html, text, replyTo, headers }) {
   try {
-    const tx = getTransporter();
-    const fromEmail =
-      process.env.MAIL_FROM_EMAIL || process.env.NODEMAILER_EMAIL;
-    const fromName = process.env.MAIL_FROM_NAME || brand || "elementTrade";
+    const client = getResendClient();
+    const fromEmail = process.env.MAIL_FROM_EMAIL;
+    const fromName = process.env.MAIL_FROM_NAME || brand || "The Fame Exchange";
+    if (!fromEmail) {
+      throw new Error("Missing MAIL_FROM_EMAIL env.");
+    }
 
-    await tx.sendMail({
-      from: `"${fromName}" <${fromEmail}>`,
+    const { error } = await client.emails.send({
+      from: `${fromName} <${fromEmail}>`,
       to,
       subject,
       html,
       text,
-      replyTo,
+      reply_to: replyTo,
       headers,
     });
+
+    if (error) {
+      console.error("sendMail error:", error);
+      return false;
+    }
     return true;
   } catch (err) {
     console.error("sendMail error:", err?.message || err);
     return false;
   }
+}
+
+/** Send: OTP Code */
+export async function sendOtpEmail(to, payload) {
+  const { subject, html, text } = getOtpEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
+}
+
+/** Send: Reset Password Link/Code */
+export async function sendResetLinkEmail(to, payload) {
+  const { subject, html, text } = getResetLinkEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
+}
+
+/** Send: Claim Account */
+export async function sendClaimAccountEmail(to, payload) {
+  const { subject, html, text } = getClaimAccountEmail(payload);
+  return sendMail({ brand: payload?.brand, to, subject, html, text });
 }
 
 /** Send: Confirmed Session Reminder */
@@ -374,7 +483,14 @@ export async function sendKycRejectedEmail(to, payload) {
 
 // default export if you prefer one import point
 export default {
-  getTransporter,
+  getResendClient,
+  sendMail,
+  getOtpEmail,
+  getResetLinkEmail,
+  getClaimAccountEmail,
+  sendOtpEmail,
+  sendResetLinkEmail,
+  sendClaimAccountEmail,
   getSessionReminderEmail,
   getTicketReminderEmail,
   sendSessionReminderEmail,
