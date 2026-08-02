@@ -11,14 +11,17 @@ import {
 } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { graduateTalentToTradeable } from "./futuresPledgeService.js";
-import { writeSocialSnapshots, computeGrowthRate } from "./socialSnapshotService.js";
+import {
+  writeSocialSnapshots,
+  computeGrowthRate,
+  computeAbsoluteFollowerDelta,
+} from "./socialSnapshotService.js";
 import { computeTalentValuation } from "./valuationService.js";
 import {
   platformMultiplierMidpoint,
   QUALIFICATION_THRESHOLDS,
   SINGLE_PLATFORM_QUALIFICATION,
   MONETIZATION_BENCHMARK_MONTHLY,
-  GROWTH_BONUS,
   VERIFIED_BONUS,
   MULTI_PLATFORM_BONUS_3PLUS,
   MULTI_PLATFORM_BONUS_2,
@@ -28,6 +31,14 @@ import {
   FAMESCORE_MAX,
   PRICE_CURVE_EXPONENT,
   REMARK_DAMPING_FACTOR,
+  MATURE_ACCOUNT_AGE_MONTHS,
+  NEW_ACCOUNT_GROWTH_FLOOR,
+  MATURE_ACCOUNT_GROWTH_FLOOR,
+  MEGA_ACCOUNT_THRESHOLD,
+  MEGA_ACCOUNT_ABSOLUTE_GROWTH_FLOOR,
+  growthMultiplierFor,
+  growthTierFor,
+  youtubeViewsValueRateMidpoint,
 } from "../config/famescoreConfig.js";
 import { GRACE_PERIOD_DAYS } from "../config/feeConfig.js";
 
@@ -36,6 +47,13 @@ const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
 function defaultEngagementRate(platform) {
   return DEFAULT_ENGAGEMENT_RATE_BY_PLATFORM[platform] ?? DEFAULT_ENGAGEMENT_RATE_FALLBACK;
+}
+
+const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000; // average month length — fine-grained precision doesn't matter for a 6-month maturity threshold
+
+function accountAgeMonthsFrom(accountCreatedAt) {
+  if (!accountCreatedAt) return null; // unknown — callers treat this as "assume mature," not "assume new"
+  return (Date.now() - new Date(accountCreatedAt).getTime()) / MS_PER_MONTH;
 }
 
 /**
@@ -68,8 +86,12 @@ async function collectSocialSignal(userId, talentId = null) {
         engagementRate: c.engagementRate ?? defaultEngagementRate(c.platform),
         engagementRateSource: c.engagementRate != null ? "measured" : "platform_default_estimate",
         avgViewsPerPost: c.avgViewsPerPost ?? null,
+        totalViews: c.totalViews ?? null,
+        videoCount: c.videoCount ?? null,
+        accountAgeMonths: accountAgeMonthsFrom(c.accountCreatedAt),
         verified: true,
         growthRate: null, // filled in below if talentId is provided
+        absoluteFollowerDelta: null, // filled in below if talentId is provided and this platform is mega-scale
       });
     }
 
@@ -85,8 +107,12 @@ async function collectSocialSignal(userId, talentId = null) {
           engagementRate: defaultEngagementRate(platform),
           engagementRateSource: "platform_default_estimate", // legacy scraper never measures engagement
           avgViewsPerPost: null,
+          totalViews: null,
+          videoCount: null,
+          accountAgeMonths: null, // legacy scraper never captures account-creation date
           verified: false,
           growthRate: null,
+          absoluteFollowerDelta: null,
         });
       }
     }
@@ -96,6 +122,17 @@ async function collectSocialSignal(userId, talentId = null) {
     await Promise.all(
       Array.from(platforms.values()).map(async (p) => {
         p.growthRate = await computeGrowthRate(talentId, p.platform, p.followers);
+        // Only queried for mega-scale platforms — computeGrowthRate's
+        // percentage already covers everyone else, and this saves an
+        // unneeded extra query per platform per recalculation.
+        if (p.followers >= MEGA_ACCOUNT_THRESHOLD) {
+          p.absoluteFollowerDelta = await computeAbsoluteFollowerDelta(talentId, p.platform, p.followers);
+        }
+        if (p.accountAgeMonths == null) {
+          console.warn(
+            `FameScore: unknown account age for platform ${p.platform} (talent ${talentId}) — defaulting to mature-account growth rules`
+          );
+        }
       })
     );
   }
@@ -104,10 +141,41 @@ async function collectSocialSignal(userId, talentId = null) {
 }
 
 /**
+ * Whether a single platform's growth clears the qualification bar — the
+ * bar itself scales with account scale/maturity instead of one flat
+ * "growthRate > 0" rule for everyone (see famescoreConfig.js's
+ * GROWTH_MULTIPLIER_TIERS comment for the production case this fixes).
+ * Exported for direct unit testing independent of the full scoring pipeline.
+ */
+export function platformGrowthQualifies(p) {
+  const isMega = p.followers >= MEGA_ACCOUNT_THRESHOLD;
+  if (typeof p.growthRate !== "number") {
+    // No snapshot history yet (first-ever evaluation). A mega-scale account
+    // is exempt from the wait — the follower count itself is proof enough,
+    // and the anti-fraud concern that justifies requiring history for
+    // smaller/newer accounts (a brand-new account claiming huge day-one
+    // numbers) doesn't apply at this scale. See QUALIFICATION_THRESHOLDS'
+    // "EXCEPTION (v3)" comment in famescoreConfig.js.
+    return isMega;
+  }
+  const isNew = typeof p.accountAgeMonths === "number" && p.accountAgeMonths < MATURE_ACCOUNT_AGE_MONTHS;
+  if (isMega) {
+    return (
+      p.growthRate >= MATURE_ACCOUNT_GROWTH_FLOOR ||
+      (typeof p.absoluteFollowerDelta === "number" && p.absoluteFollowerDelta >= MEGA_ACCOUNT_ABSOLUTE_GROWTH_FLOOR)
+    );
+  }
+  if (isNew) return p.growthRate >= NEW_ACCOUNT_GROWTH_FLOOR;
+  return p.growthRate >= MATURE_ACCOUNT_GROWTH_FLOOR; // mature, including unknown-age fallback
+}
+
+/**
  * Core proprietary scoring function (v2). Estimates monthly monetization
  * value per platform (followers x engagement rate x per-platform revenue
- * multiplier), sums it, and normalizes against a $50K/mo benchmark into a
- * 0-100 score, plus growth/verified/multi-platform bonuses.
+ * multiplier, scaled by a per-platform growth multiplier — see
+ * platformGrowthQualifies/GROWTH_MULTIPLIER_TIERS), sums it, and
+ * normalizes against a $50K/mo benchmark into a 0-100 score, plus
+ * verified/multi-platform bonuses.
  *
  * Qualification is evaluated SEPARATELY from the score via two independent
  * paths — either qualifies:
@@ -124,7 +192,25 @@ export function calculateFameScore(platforms) {
     const followers = Math.max(0, Number(p.followers) || 0);
     const engagementRate = Math.max(0, Number(p.engagementRate) || 0);
     const multiplier = platformMultiplierMidpoint(p.platform);
-    const value = followers * engagementRate * multiplier;
+    const growthRate = typeof p.growthRate === "number" ? p.growthRate : null;
+    const accountAgeMonths = typeof p.accountAgeMonths === "number" ? p.accountAgeMonths : null;
+    const growthMultiplier = growthMultiplierFor(growthRate);
+
+    const subscriberValue = followers * engagementRate * multiplier;
+    let value;
+    if (p.platform === "youtube" && Number(p.totalViews) > 0 && Number(p.videoCount) > 0) {
+      // YouTube-only: also price the channel on lifetime avg monthly views,
+      // so a huge back-catalog of views isn't undervalued when current
+      // subscriber engagement looks modest. max() of the two candidates,
+      // growth multiplier applied once afterward (not to each candidate
+      // separately, to avoid double-counting the growth signal).
+      const avgMonthlyViews = Number(p.totalViews) / Math.max(1, accountAgeMonths ?? 1);
+      const viewsValue = (avgMonthlyViews / 1000) * youtubeViewsValueRateMidpoint();
+      value = Math.max(subscriberValue, viewsValue) * growthMultiplier;
+    } else {
+      value = subscriberValue * growthMultiplier;
+    }
+
     return {
       platform: p.platform,
       followers,
@@ -132,7 +218,9 @@ export function calculateFameScore(platforms) {
       engagementRateSource: p.engagementRateSource,
       value,
       verified: !!p.verified,
-      growthRate: typeof p.growthRate === "number" ? p.growthRate : null,
+      growthRate,
+      accountAgeMonths,
+      absoluteFollowerDelta: typeof p.absoluteFollowerDelta === "number" ? p.absoluteFollowerDelta : null,
     };
   });
 
@@ -143,7 +231,7 @@ export function calculateFameScore(platforms) {
     ? perPlatform.reduce((sum, p) => sum + p.engagementRate * p.followers, 0) / totalFollowers
     : 0;
   const platformCount = perPlatform.length;
-  const hasGrowth = perPlatform.some((p) => (p.growthRate ?? 0) > 0);
+  const hasGrowth = perPlatform.some(platformGrowthQualifies);
   const hasVerified = perPlatform.some((p) => p.verified);
 
   const platformBreakdown = perPlatform.map((p) => ({
@@ -151,15 +239,19 @@ export function calculateFameScore(platforms) {
     followers: p.followers,
     engagementRate: p.engagementRate,
     growthRate: p.growthRate,
+    growthTier: growthTierFor(p.growthRate),
+    growthQualifies: platformGrowthQualifies(p),
+    accountAgeMonths: p.accountAgeMonths,
     verified: p.verified,
     value: +p.value.toFixed(2),
     contribution: totalMonetizationValue > 0 ? +((p.value / totalMonetizationValue) * 100).toFixed(1) : 0,
     ...(p.engagementRateSource ? { engagementRateSource: p.engagementRateSource } : {}),
   }));
 
-  // STEP 3 — score (0-100).
+  // STEP 3 — score (0-100). Growth is now priced per-platform in STEP 1
+  // (GROWTH_MULTIPLIER_TIERS), not as a flat bonus here — see
+  // famescoreConfig.js's GROWTH_BONUS deprecation comment.
   let score = Math.min(100, (totalMonetizationValue / MONETIZATION_BENCHMARK_MONTHLY) * 100);
-  if (hasGrowth) score += GROWTH_BONUS;
   if (hasVerified) score += VERIFIED_BONUS;
   if (platformCount >= 3) score += MULTI_PLATFORM_BONUS_3PLUS;
   else if (platformCount === 2) score += MULTI_PLATFORM_BONUS_2;
@@ -181,7 +273,7 @@ export function calculateFameScore(platforms) {
     misses.push(`Need ${minPlatforms}+ platforms (currently ${platformCount})`);
   }
   if (!growthOk) {
-    misses.push("No positive growth trend detected");
+    misses.push("No qualifying growth trend detected (mature accounts must not decline more than 5%/month; new accounts under 6 months must grow at least 1%/month)");
   }
   const qualifiesViaMultiPlatform = misses.length === 0;
 
