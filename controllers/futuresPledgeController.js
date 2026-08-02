@@ -73,8 +73,9 @@ export const finishPledge = async (req, res) => {
 // Body: { userId, amount }
 // Test/demo equivalent of the real pledge-intent + pledge-confirm round trip,
 // for exercising the pledge -> graduation flow without real payment
-// credentials configured — mirrors the existing walletController.depositFunds
-// "for testing / admin" pattern.
+// credentials configured. Unlike the wallet controller's now-removed
+// unauthenticated deposit shortcut, this one is properly admin-gated
+// (auth_admin) — required, not just a comment, since it credits real value.
 export const simulatePledge = async (req, res) => {
   try {
     const { userId, amount } = req.body || {};
