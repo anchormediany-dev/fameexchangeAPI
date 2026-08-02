@@ -1,0 +1,307 @@
+{
+  "address": "AVp2WjNdFj6g1inw79m9KQ5oc7EMKzRknH14HVZfS3nW",
+  "metadata": {
+    "name": "tfe_transfer_hook",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "execute",
+      "docs": [
+        "Requirement #1. Not reachable via Anchor's normal instruction",
+        "dispatch — Token-2022 invokes this with the raw SPL",
+        "spl-transfer-hook-interface `Execute` discriminator, not Anchor's own",
+        "generated one, so it's only ever reached through `fallback` below.",
+        "Written as a normal-looking Anchor instruction anyway so the account",
+        "struct still gets Anchor's usual validation/deserialization."
+      ],
+      "discriminator": [
+        130,
+        221,
+        242,
+        154,
+        13,
+        193,
+        189,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "source_token"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "destination_token"
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "deliberately *not* constrained to `source_token`'s owner via `token::authority`",
+            "here. Token-2022 itself already verified this account is a legitimate signer",
+            "(either the real owner or an approved delegate) before ever CPI-ing into this",
+            "hook, so re-asserting owner-equality here would just reject the common,",
+            "standard case of a delegated transfer (e.g. `tfe_exchange`'s own order-matching",
+            "model, where traders approve `tfe_exchange`'s PDA as delegate rather than",
+            "transferring out of their own accounts — see that program's README for why).",
+            "The KYC checks below are correctly keyed off `source_token.owner`/",
+            "`destination_token.owner` regardless — the real owner, never the delegate —",
+            "so this account's only real role is calling-program introspection."
+          ]
+        },
+        {
+          "name": "extra_account_meta_list",
+          "docs": [
+            "looks this account up at this exact PDA before invoking us."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  116,
+                  114,
+                  97,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "Used to look up the top-level instruction that ultimately triggered",
+            "this transfer (requirement #2)."
+          ],
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "kyc_registry_program",
+          "docs": [
+            "ID. Only used as the owning-program reference for the two KYC PDAs",
+            "below — never read."
+          ],
+          "address": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+        },
+        {
+          "name": "sender_kyc_record",
+          "docs": [
+            "manually in the handler per the documented layout in constants.rs",
+            "(see the comment there for why this isn't a typed Anchor `Account`)."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "source_token.owner"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "kyc_registry_program"
+            }
+          }
+        },
+        {
+          "name": "receiver_kyc_record",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "destination_token.owner"
+              }
+            ],
+            "program": {
+              "kind": "account",
+              "path": "kyc_registry_program"
+            }
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_extra_account_meta_list",
+      "docs": [
+        "Requirement #5."
+      ],
+      "discriminator": [
+        92,
+        197,
+        174,
+        197,
+        41,
+        124,
+        19,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The mint authority — also pays for the validation account's rent.",
+            "Requiring this to be the real mint authority (via `mint::authority`",
+            "below) means only whoever controls the mint can wire up this hook's",
+            "extra-account config for it."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "extra_account_meta_list",
+          "docs": [
+            "`ExtraAccountMetaList::init` below, not an Anchor-serialized account.",
+            "Seeds match `spl_transfer_hook_interface::collect_extra_account_metas_seeds`",
+            "exactly — this is the fixed address Token-2022 itself looks up."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  116,
+                  114,
+                  97,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "kyc_registry_program",
+          "docs": [
+            "ID; only used here as the external \"owning program\" reference for",
+            "deriving the sender/receiver KYC PDAs in the extra-account-meta list."
+          ],
+          "address": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorizedExchange",
+      "msg": "Transfer must go through TFE Exchange"
+    },
+    {
+      "code": 6001,
+      "name": "SenderNotVerified",
+      "msg": "Sender wallet not KYC verified"
+    },
+    {
+      "code": 6002,
+      "name": "ReceiverNotVerified",
+      "msg": "Receiver wallet not KYC verified"
+    },
+    {
+      "code": 6003,
+      "name": "SenderRevoked",
+      "msg": "Sender KYC revoked"
+    },
+    {
+      "code": 6004,
+      "name": "ReceiverRevoked",
+      "msg": "Receiver KYC revoked"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidKycAccountData",
+      "msg": "KYC record account data is malformed or too short"
+    }
+  ],
+  "constants": [
+    {
+      "name": "KYC_RECORD_SEED",
+      "docs": [
+        "Seed prefix for a wallet's KYC record PDA under `tfe_kyc_registry`:",
+        "`[\"kyc\", wallet_pubkey]`."
+      ],
+      "type": "bytes",
+      "value": "[107, 121, 99]"
+    },
+    {
+      "name": "TFE_EXCHANGE_PROGRAM_ID",
+      "type": "pubkey",
+      "value": "HRerodqzFjef1ofx9DD9sGotw8RzzKsRz9q9XMYT5MGv"
+    },
+    {
+      "name": "TFE_KYC_REGISTRY_PROGRAM_ID",
+      "type": "pubkey",
+      "value": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+    }
+  ]
+}

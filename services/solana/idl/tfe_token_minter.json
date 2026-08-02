@@ -1,0 +1,1047 @@
+{
+  "address": "32v7giXjk2PAWD7rzxU6WCf6s476gGWXuzSHXJyPVexS",
+  "metadata": {
+    "name": "tfe_token_minter",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "burn_shares",
+      "discriminator": [
+        98,
+        168,
+        88,
+        31,
+        217,
+        221,
+        191,
+        214
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  108,
+                  101,
+                  110,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "source_token_account",
+          "writable": true
+        },
+        {
+          "name": "liquidity_pool_authority",
+          "docs": [
+            "used as a signing authority on the admin path."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  113,
+                  117,
+                  105,
+                  100,
+                  105,
+                  116,
+                  121,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_talent_token",
+      "discriminator": [
+        55,
+        9,
+        172,
+        98,
+        200,
+        60,
+        43,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  108,
+                  101,
+                  110,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_talent_token",
+      "discriminator": [
+        63,
+        213,
+        190,
+        116,
+        215,
+        175,
+        180,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Fresh keypair for the new mint, created and initialized entirely via CPI in the handler."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint_authority",
+          "docs": [
+            "this program creates; address validated by seeds, never holds Anchor account data. `mut`",
+            "because it also acts as `tfe_transfer_hook::initialize_extra_account_meta_list`'s payer",
+            "below (that instruction's `authority` account both proves mint ownership and funds the",
+            "validation account's rent) — funded for exactly that purpose immediately beforehand,",
+            "since it otherwise never holds a lamport balance of its own."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "talent_wallet"
+        },
+        {
+          "name": "talent_token_account",
+          "docs": [
+            "exist yet at account-validation time, so Anchor's `associated_token::` constraint can't",
+            "be used here — its address is still checked manually below)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidity_pool_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  113,
+                  117,
+                  105,
+                  100,
+                  105,
+                  116,
+                  121,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "liquidity_pool_token_account",
+          "docs": [
+            "`talent_token_account` above."
+          ],
+          "writable": true
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  108,
+                  101,
+                  110,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "extra_account_meta_list",
+          "docs": [
+            "Transfer Hook is inert without it (Token-2022 looks this address up on every hooked",
+            "transfer). Created here via CPI into `tfe_transfer_hook::initialize_extra_account_meta_list`,",
+            "signed by `mint_authority`; that instruction requires the caller to be the mint's real",
+            "authority, which only this program's own PDA can prove for a mint it just created — no",
+            "outside caller could set this up after the fact."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  116,
+                  114,
+                  97,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  45,
+                  109,
+                  101,
+                  116,
+                  97,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                141,
+                26,
+                158,
+                23,
+                170,
+                9,
+                47,
+                195,
+                191,
+                250,
+                213,
+                77,
+                58,
+                60,
+                134,
+                107,
+                17,
+                196,
+                63,
+                18,
+                102,
+                161,
+                162,
+                213,
+                73,
+                237,
+                67,
+                182,
+                62,
+                67,
+                232,
+                223
+              ]
+            }
+          }
+        },
+        {
+          "name": "tfe_transfer_hook_program",
+          "address": "AVp2WjNdFj6g1inw79m9KQ5oc7EMKzRknH14HVZfS3nW"
+        },
+        {
+          "name": "tfe_kyc_registry_program",
+          "docs": [
+            "`ExtraAccountMetaList`, never read here."
+          ],
+          "address": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        },
+        {
+          "name": "talent_amount",
+          "type": "u64"
+        },
+        {
+          "name": "pool_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "admin_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "mint_additional_shares",
+      "discriminator": [
+        134,
+        243,
+        226,
+        143,
+        241,
+        57,
+        197,
+        22
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  97,
+                  108,
+                  101,
+                  110,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_admin_authority",
+      "discriminator": [
+        100,
+        34,
+        160,
+        251,
+        120,
+        24,
+        181,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin_authority",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "TalentTokenRegistry",
+      "discriminator": [
+        18,
+        146,
+        181,
+        248,
+        99,
+        139,
+        227,
+        54
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "SharesBurnedEvent",
+      "discriminator": [
+        49,
+        186,
+        2,
+        20,
+        102,
+        223,
+        197,
+        5
+      ]
+    },
+    {
+      "name": "SharesMintedEvent",
+      "discriminator": [
+        143,
+        182,
+        249,
+        157,
+        227,
+        97,
+        42,
+        56
+      ]
+    },
+    {
+      "name": "TalentTokenClosedEvent",
+      "discriminator": [
+        79,
+        128,
+        87,
+        104,
+        252,
+        62,
+        160,
+        179
+      ]
+    },
+    {
+      "name": "TalentTokenCreatedEvent",
+      "discriminator": [
+        210,
+        209,
+        181,
+        82,
+        82,
+        96,
+        56,
+        156
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorizedAdmin",
+      "msg": "Only the admin authority can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "UnauthorizedBurner",
+      "msg": "Only the admin authority or the talent owner can burn shares, and each may only burn from the account they control"
+    },
+    {
+      "code": 6002,
+      "name": "TalentTokenAlreadyClosed",
+      "msg": "This talent token is already closed"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidShareAmount",
+      "msg": "Share amount must be greater than zero"
+    },
+    {
+      "code": 6004,
+      "name": "SupplyOverflow",
+      "msg": "talent_amount + pool_amount overflowed u64"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "docs": [
+        "Singleton PDA, seeds `[CONFIG_SEED]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin_authority",
+            "docs": [
+              "Gates `create_talent_token`, `mint_additional_shares`, and `close_talent_token`.",
+              "Freely rotatable via `update_admin_authority` — expected to eventually be a PDA controlled",
+              "by the TFE platform program, same pattern as `tfe_kyc_registry`'s `Config.admin_authority`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesBurnedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "source",
+            "type": "pubkey"
+          },
+          {
+            "name": "burned_by",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesMintedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TalentTokenClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "closed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TalentTokenCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "talent_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidity_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "talent_amount",
+            "type": "u64"
+          },
+          {
+            "name": "pool_amount",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TalentTokenRegistry",
+      "docs": [
+        "Per-mint PDA, seeds `[TALENT_TOKEN_SEED, mint]`. One per talent token this program creates."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "talent_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidity_pool",
+            "docs": [
+              "The liquidity pool's associated token account for this mint (owned by that mint's",
+              "`liquidity_pool_authority` PDA, seeds `[LIQUIDITY_POOL_SEED, mint]`)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "`TALENT_TOKEN_STATUS_ACTIVE` or `TALENT_TOKEN_STATUS_CLOSED`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "total_minted",
+            "docs": [
+              "Cumulative shares ever minted (initial supply + all `mint_additional_shares` calls).",
+              "A high-water mark, not net-of-burns — burns are tracked only in token-account balances."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "CONFIG_SEED",
+      "type": "bytes",
+      "value": "[99, 111, 110, 102, 105, 103]"
+    },
+    {
+      "name": "LIQUIDITY_POOL_SEED",
+      "docs": [
+        "Per-mint PDA, seeds `[LIQUIDITY_POOL_SEED, mint]`. Owns the liquidity pool's associated token account."
+      ],
+      "type": "bytes",
+      "value": "[108, 105, 113, 117, 105, 100, 105, 116, 121, 95, 112, 111, 111, 108]"
+    },
+    {
+      "name": "MINT_AUTHORITY_SEED",
+      "docs": [
+        "Singleton PDA, seeds `[MINT_AUTHORITY_SEED]`. Never holds Anchor-managed data — it exists purely",
+        "as a signing authority (mint authority + freeze authority) for every talent mint this program creates,",
+        "so the program can autonomously mint/manage supply via `invoke_signed` without an external signer."
+      ],
+      "type": "bytes",
+      "value": "[109, 105, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]"
+    },
+    {
+      "name": "TALENT_TOKEN_SEED",
+      "docs": [
+        "Per-mint PDA, seeds `[TALENT_TOKEN_SEED, mint]`."
+      ],
+      "type": "bytes",
+      "value": "[116, 97, 108, 101, 110, 116, 95, 116, 111, 107, 101, 110]"
+    },
+    {
+      "name": "TFE_KYC_REGISTRY_PROGRAM_ID",
+      "docs": [
+        "`tfe_kyc_registry`'s real, deployed program ID (see /Users/victorramos/Desktop/tfe_kyc_registry).",
+        "Referenced only when wiring up `tfe_transfer_hook`'s `ExtraAccountMetaList` for a new mint",
+        "(see `create_talent_token`) — that call needs to tell the hook which KYC registry to use,",
+        "even though this program never touches KYC data itself."
+      ],
+      "type": "pubkey",
+      "value": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+    },
+    {
+      "name": "TFE_TRANSFER_HOOK_PROGRAM_ID",
+      "docs": [
+        "`tfe_transfer_hook`'s real, deployed program ID (see /Users/victorramos/Desktop/tfe_transfer_hook).",
+        "Every talent mint created here has its Token-2022 TransferHook extension pointed at this program."
+      ],
+      "type": "pubkey",
+      "value": "AVp2WjNdFj6g1inw79m9KQ5oc7EMKzRknH14HVZfS3nW"
+    },
+    {
+      "name": "TOKEN_DECIMALS",
+      "docs": [
+        "Whole shares only, per spec."
+      ],
+      "type": "u8",
+      "value": "0"
+    }
+  ]
+}

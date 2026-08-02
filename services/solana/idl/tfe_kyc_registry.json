@@ -1,0 +1,670 @@
+{
+  "address": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa",
+  "metadata": {
+    "name": "tfe_kyc_registry",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "docs": [
+        "Deploy-time setup — see instructions/initialize.rs for the",
+        "front-running caveat and why authorities are freely rotatable after."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "admin_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "backend_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "is_verified",
+      "docs": [
+        "Requirement #5: read-only, no authority required."
+      ],
+      "discriminator": [
+        142,
+        197,
+        107,
+        116,
+        247,
+        60,
+        229,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "kyc_record",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "wallet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "wallet",
+          "type": "pubkey"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "name": "register_user",
+      "docs": [
+        "Requirement #4: TFE backend signer only."
+      ],
+      "discriminator": [
+        2,
+        241,
+        150,
+        223,
+        99,
+        214,
+        116,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "backend_authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "kyc_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "wallet",
+          "type": "pubkey"
+        },
+        {
+          "name": "user_id_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "revoke_verification",
+      "docs": [
+        "Requirement #3: admin authority only."
+      ],
+      "discriminator": [
+        114,
+        179,
+        245,
+        243,
+        239,
+        182,
+        200,
+        73
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "kyc_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "wallet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "wallet",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_admin_authority",
+      "discriminator": [
+        100,
+        34,
+        160,
+        251,
+        120,
+        24,
+        181,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_backend_authority",
+      "discriminator": [
+        111,
+        128,
+        15,
+        200,
+        191,
+        189,
+        146,
+        53
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_backend_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "verify_user",
+      "docs": [
+        "Requirement #3: admin authority only."
+      ],
+      "discriminator": [
+        127,
+        54,
+        157,
+        106,
+        85,
+        167,
+        116,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "kyc_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "wallet"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "wallet",
+          "type": "pubkey"
+        },
+        {
+          "name": "kyc_tier",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "KycRecord",
+      "discriminator": [
+        60,
+        42,
+        41,
+        19,
+        198,
+        74,
+        18,
+        101
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "KycRevokedEvent",
+      "discriminator": [
+        211,
+        253,
+        12,
+        211,
+        216,
+        154,
+        236,
+        144
+      ]
+    },
+    {
+      "name": "KycVerifiedEvent",
+      "discriminator": [
+        7,
+        52,
+        204,
+        79,
+        98,
+        4,
+        125,
+        186
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorizedAdmin",
+      "msg": "Only the admin authority can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "UnauthorizedBackend",
+      "msg": "Only the backend authority can perform this action"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidKycTier",
+      "msg": "kyc_tier must be BASIC (1) or FULL (2) to verify a user"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "docs": [
+        "Singleton config account holding the two governing authorities.",
+        "`admin_authority` is expected to eventually be a PDA controlled by the",
+        "TFE platform program (not yet built) — until then it's whatever pubkey",
+        "`initialize` was called with, rotatable via `update_admin_authority`",
+        "without a redeploy."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin_authority",
+            "docs": [
+              "Can call verify_user, revoke_verification, update_admin_authority,",
+              "and update_backend_authority."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "backend_authority",
+            "docs": [
+              "Can call register_user. Deliberately a separate, lower-trust role",
+              "from admin_authority — the TFE backend can create pending records but",
+              "cannot itself grant or revoke verification."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KycRecord",
+      "docs": [
+        "PDA seeds: `[\"kyc\", wallet]`, one per wallet. See constants.rs.",
+        "",
+        "`verified`/`kyc_tier` and `revoked` are deliberately independent fields",
+        "(per spec) rather than a single enum, preserving the historical fact that",
+        "a wallet WAS verified even after a later revocation — the *effective*",
+        "current status callers should treat as \"verified\" is `verified &&",
+        "!revoked` (see `handle_is_verified`), not `verified` alone."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "user_id_hash",
+            "docs": [
+              "Hash of the TFE user ID — never the raw ID, so this account never",
+              "stores PII directly on-chain."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "kyc_tier",
+            "docs": [
+              "0 = none, 1 = basic, 2 = full. See KYC_TIER_* in constants.rs."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "verified",
+            "type": "bool"
+          },
+          {
+            "name": "verified_at",
+            "type": "i64"
+          },
+          {
+            "name": "revoked",
+            "type": "bool"
+          },
+          {
+            "name": "revoked_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KycRevokedEvent",
+      "docs": [
+        "Requirement #6: emitted on every successful revoke_verification call."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "revoked_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KycVerifiedEvent",
+      "docs": [
+        "Requirement #6: emitted on every successful verify_user call, for",
+        "off-chain indexing."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "kyc_tier",
+            "type": "u8"
+          },
+          {
+            "name": "verified_at",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "CONFIG_SEED",
+      "docs": [
+        "Seed for the singleton Config PDA holding admin_authority/backend_authority."
+      ],
+      "type": "bytes",
+      "value": "[99, 111, 110, 102, 105, 103]"
+    },
+    {
+      "name": "KYC_RECORD_SEED",
+      "docs": [
+        "Seed prefix for a wallet's KycRecord PDA: `[\"kyc\", wallet_pubkey]`.",
+        "This exact seed scheme is what `tfe_transfer_hook` derives against —",
+        "changing it is a breaking change for that program too."
+      ],
+      "type": "bytes",
+      "value": "[107, 121, 99]"
+    },
+    {
+      "name": "KYC_TIER_BASIC",
+      "type": "u8",
+      "value": "1"
+    },
+    {
+      "name": "KYC_TIER_FULL",
+      "type": "u8",
+      "value": "2"
+    },
+    {
+      "name": "KYC_TIER_NONE",
+      "docs": [
+        "kyc_tier values. 0 (none) is the only tier a freshly-registered,",
+        "not-yet-verified record may hold; verify_user requires BASIC or FULL."
+      ],
+      "type": "u8",
+      "value": "0"
+    }
+  ]
+}

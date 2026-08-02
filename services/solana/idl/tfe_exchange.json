@@ -1,0 +1,1712 @@
+{
+  "address": "HRerodqzFjef1ofx9DD9sGotw8RzzKsRz9q9XMYT5MGv",
+  "metadata": {
+    "name": "tfe_exchange",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "allocate_claimable_shares",
+      "discriminator": [
+        212,
+        60,
+        197,
+        170,
+        221,
+        124,
+        239,
+        197
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "allocation",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "mint"
+              },
+              {
+                "kind": "arg",
+                "path": "talent_wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "talent_wallet",
+          "type": "pubkey"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "cancel_order",
+      "discriminator": [
+        95,
+        129,
+        237,
+        240,
+        8,
+        49,
+        223,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  99,
+                  104,
+                  97,
+                  110,
+                  103,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "order",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "order_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trader_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "order_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_talent_shares",
+      "discriminator": [
+        88,
+        2,
+        251,
+        46,
+        236,
+        219,
+        130,
+        125
+      ],
+      "accounts": [
+        {
+          "name": "talent",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "allocation",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  97,
+                  98,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "talent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_authority",
+          "docs": [
+            "validated by seeds."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  99,
+                  104,
+                  97,
+                  110,
+                  103,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_pool_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "exchange_authority"
+              },
+              {
+                "kind": "account",
+                "path": "token_2022_program"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "talent_share_account",
+          "writable": true
+        },
+        {
+          "name": "extra_account_meta_list"
+        },
+        {
+          "name": "tfe_transfer_hook_program"
+        },
+        {
+          "name": "instructions_sysvar"
+        },
+        {
+          "name": "tfe_kyc_registry_program"
+        },
+        {
+          "name": "sender_kyc_record",
+          "docs": [
+            "must be pre-registered by the admin."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "exchange_authority"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                128,
+                109,
+                170,
+                104,
+                107,
+                82,
+                138,
+                68,
+                112,
+                23,
+                88,
+                190,
+                72,
+                15,
+                167,
+                232,
+                71,
+                73,
+                245,
+                252,
+                246,
+                24,
+                211,
+                88,
+                141,
+                188,
+                48,
+                8,
+                70,
+                197,
+                39,
+                233
+              ]
+            }
+          }
+        },
+        {
+          "name": "receiver_kyc_record",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "talent"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                128,
+                109,
+                170,
+                104,
+                107,
+                82,
+                138,
+                68,
+                112,
+                23,
+                88,
+                190,
+                72,
+                15,
+                167,
+                232,
+                71,
+                73,
+                245,
+                252,
+                246,
+                24,
+                211,
+                88,
+                141,
+                188,
+                48,
+                8,
+                70,
+                197,
+                39,
+                233
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_2022_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_trade",
+      "discriminator": [
+        77,
+        16,
+        192,
+        135,
+        13,
+        0,
+        106,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "executor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  99,
+                  104,
+                  97,
+                  110,
+                  103,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "buy_order",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "buy_order_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sell_order",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "sell_order_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "buyer_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "seller_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "seller_share_account",
+          "writable": true
+        },
+        {
+          "name": "buyer_share_account",
+          "writable": true
+        },
+        {
+          "name": "trade_record",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_trade_id",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "extra_account_meta_list",
+          "docs": [
+            "verified against `additional_accounts` by `add_extra_accounts_for_execute_cpi`, not by an",
+            "Anchor constraint (its address is a function of `mint` + the hook program, computed via",
+            "`spl_transfer_hook_interface::get_extra_account_metas_address`)."
+          ]
+        },
+        {
+          "name": "tfe_transfer_hook_program",
+          "docs": [
+            "rather than an `address =` constraint so the error is one of this program's own variants."
+          ]
+        },
+        {
+          "name": "instructions_sysvar",
+          "docs": [
+            "top-level caller."
+          ]
+        },
+        {
+          "name": "tfe_kyc_registry_program"
+        },
+        {
+          "name": "sender_kyc_record",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "sell_order.trader",
+                "account": "Order"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                128,
+                109,
+                170,
+                104,
+                107,
+                82,
+                138,
+                68,
+                112,
+                23,
+                88,
+                190,
+                72,
+                15,
+                167,
+                232,
+                71,
+                73,
+                245,
+                252,
+                246,
+                24,
+                211,
+                88,
+                141,
+                188,
+                48,
+                8,
+                70,
+                197,
+                39,
+                233
+              ]
+            }
+          }
+        },
+        {
+          "name": "receiver_kyc_record",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  107,
+                  121,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buy_order.trader",
+                "account": "Order"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                128,
+                109,
+                170,
+                104,
+                107,
+                82,
+                138,
+                68,
+                112,
+                23,
+                88,
+                190,
+                72,
+                15,
+                167,
+                232,
+                71,
+                73,
+                245,
+                252,
+                246,
+                24,
+                211,
+                88,
+                141,
+                188,
+                48,
+                8,
+                70,
+                197,
+                39,
+                233
+              ]
+            }
+          }
+        },
+        {
+          "name": "usdc_token_program"
+        },
+        {
+          "name": "token_2022_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "buy_order_id",
+          "type": "u64"
+        },
+        {
+          "name": "sell_order_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "admin_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "treasury_wallet",
+          "type": "pubkey"
+        },
+        {
+          "name": "usdc_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "place_buy_order",
+      "discriminator": [
+        47,
+        253,
+        241,
+        214,
+        167,
+        204,
+        11,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_authority",
+          "docs": [
+            "validated by seeds, never holds account data."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  99,
+                  104,
+                  97,
+                  110,
+                  103,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "order",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_order_id",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trader_usdc_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "mint",
+          "type": "pubkey"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "place_sell_order",
+      "discriminator": [
+        254,
+        177,
+        180,
+        104,
+        171,
+        194,
+        79,
+        86
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "exchange_authority",
+          "docs": [
+            "validated by seeds, never holds account data."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  99,
+                  104,
+                  97,
+                  110,
+                  103,
+                  101,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "order",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_order_id",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "trader_share_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_admin_authority",
+      "discriminator": [
+        100,
+        34,
+        160,
+        251,
+        120,
+        24,
+        181,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_admin_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "update_treasury_wallet",
+      "discriminator": [
+        23,
+        201,
+        227,
+        212,
+        18,
+        219,
+        169,
+        240
+      ],
+      "accounts": [
+        {
+          "name": "admin_authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "new_treasury_wallet",
+          "type": "pubkey"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ClaimableAllocation",
+      "discriminator": [
+        100,
+        131,
+        138,
+        131,
+        163,
+        232,
+        134,
+        78
+      ]
+    },
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Order",
+      "discriminator": [
+        134,
+        173,
+        223,
+        185,
+        77,
+        86,
+        28,
+        51
+      ]
+    },
+    {
+      "name": "TradeRecord",
+      "discriminator": [
+        150,
+        248,
+        182,
+        169,
+        229,
+        100,
+        24,
+        37
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "OrderCancelledEvent",
+      "discriminator": [
+        200,
+        73,
+        179,
+        145,
+        247,
+        176,
+        10,
+        101
+      ]
+    },
+    {
+      "name": "OrderPlacedEvent",
+      "discriminator": [
+        245,
+        198,
+        202,
+        247,
+        110,
+        231,
+        254,
+        156
+      ]
+    },
+    {
+      "name": "SharesClaimedEvent",
+      "discriminator": [
+        234,
+        35,
+        247,
+        58,
+        136,
+        208,
+        214,
+        99
+      ]
+    },
+    {
+      "name": "TradeExecutedEvent",
+      "discriminator": [
+        177,
+        28,
+        68,
+        220,
+        129,
+        3,
+        100,
+        52
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "UnauthorizedAdmin",
+      "msg": "Only the admin authority can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "UnauthorizedTrader",
+      "msg": "Only the order's own trader can perform this action"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidOrderSide",
+      "msg": "Order side must be 0 (buy) or 1 (sell)"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidOrderParams",
+      "msg": "Amount and price must both be greater than zero"
+    },
+    {
+      "code": 6004,
+      "name": "OrderNotOpen",
+      "msg": "Order is not open"
+    },
+    {
+      "code": 6005,
+      "name": "OrderSideMismatch",
+      "msg": "buy_order must be a buy and sell_order must be a sell"
+    },
+    {
+      "code": 6006,
+      "name": "MintMismatch",
+      "msg": "Orders must reference the same mint"
+    },
+    {
+      "code": 6007,
+      "name": "OrderTermsMismatch",
+      "msg": "Matched orders must have identical amount and price"
+    },
+    {
+      "code": 6008,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6009,
+      "name": "NothingToClaim",
+      "msg": "Nothing to claim for this mint/talent pair"
+    }
+  ],
+  "types": [
+    {
+      "name": "ClaimableAllocation",
+      "docs": [
+        "Per-(mint, talent) PDA, seeds `[CLAIMABLE_SEED, mint, talent_wallet]`. Tracks how many shares",
+        "of `mint` `talent_wallet` may claim from this program's own exchange-pool vault for that mint",
+        "— see `allocate_claimable_shares` / `claim_talent_shares` and the README for why this is a",
+        "separate, self-contained pool rather than `tfe_token_minter`'s own liquidity pool."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "talent_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "docs": [
+        "Singleton PDA, seeds `[CONFIG_SEED]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin_authority",
+            "docs": [
+              "Gates `update_config` and `allocate_claimable_shares`. Freely rotatable, same pattern as",
+              "`tfe_kyc_registry`/`tfe_token_minter`'s `Config.admin_authority`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury_wallet",
+            "docs": [
+              "Wallet whose USDC associated token account receives the 1.5% fee on every trade."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "docs": [
+              "The USDC mint this exchange quotes in. Legacy SPL Token, not Token-2022 — real USDC",
+              "hasn't migrated."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "next_order_id",
+            "type": "u64"
+          },
+          {
+            "name": "next_trade_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Order",
+      "docs": [
+        "Per-order PDA, seeds `[ORDER_SEED, order_id.to_le_bytes()]`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "docs": [
+              "`ORDER_SIDE_BUY` or `ORDER_SIDE_SELL`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Number of shares."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Price per share, in USDC base units (respecting the USDC mint's own decimals)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "`ORDER_STATUS_OPEN`, `ORDER_STATUS_FILLED`, or `ORDER_STATUS_CANCELLED`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderCancelledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderPlacedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesClaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "talent_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeExecutedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "u64"
+          },
+          {
+            "name": "buy_order",
+            "type": "pubkey"
+          },
+          {
+            "name": "sell_order",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "executed_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradeRecord",
+      "docs": [
+        "Per-trade PDA, seeds `[TRADE_SEED, trade_id.to_le_bytes()]`. Created once, immutable",
+        "afterward — the permanent settlement record for a matched buy/sell pair."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "u64"
+          },
+          {
+            "name": "buy_order",
+            "type": "pubkey"
+          },
+          {
+            "name": "sell_order",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "docs": [
+              "The 1.5% fee actually charged, in USDC base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "executed_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "CLAIMABLE_SEED",
+      "docs": [
+        "Per-(mint, talent) PDA, seeds `[CLAIMABLE_SEED, mint, talent_wallet]` — see",
+        "`claim_talent_shares` / `allocate_claimable_shares` and the README's cross-program note on why",
+        "this is a self-contained pool, not `tfe_token_minter`'s own liquidity pool."
+      ],
+      "type": "bytes",
+      "value": "[99, 108, 97, 105, 109, 97, 98, 108, 101]"
+    },
+    {
+      "name": "CONFIG_SEED",
+      "type": "bytes",
+      "value": "[99, 111, 110, 102, 105, 103]"
+    },
+    {
+      "name": "EXCHANGE_AUTHORITY_SEED",
+      "docs": [
+        "Singleton PDA, seeds `[EXCHANGE_AUTHORITY_SEED]`. Never holds Anchor-managed data — it's the",
+        "delegate authority approved by traders at order-placement time (over their own USDC / share",
+        "token accounts), letting this program later settle a matched trade without either trader's",
+        "live signature. See the design note in `README.md` for why delegation, not escrow, is used."
+      ],
+      "type": "bytes",
+      "value": "[101, 120, 99, 104, 97, 110, 103, 101, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]"
+    },
+    {
+      "name": "KYC_RECORD_SEED",
+      "docs": [
+        "Must match `tfe_kyc_registry`'s own `KYC_RECORD_SEED` exactly — used only to *derive* the",
+        "sender/receiver KYC record PDAs to pass along to the Transfer Hook CPI, never to read their",
+        "contents (this program doesn't parse KYC data; the hook does that itself)."
+      ],
+      "type": "bytes",
+      "value": "[107, 121, 99]"
+    },
+    {
+      "name": "ORDER_SEED",
+      "docs": [
+        "Per-order PDA, seeds `[ORDER_SEED, order_id.to_le_bytes()]`."
+      ],
+      "type": "bytes",
+      "value": "[111, 114, 100, 101, 114]"
+    },
+    {
+      "name": "TFE_KYC_REGISTRY_PROGRAM_ID",
+      "docs": [
+        "`tfe_kyc_registry`'s real, deployed program ID (see /Users/victorramos/Desktop/tfe_kyc_registry)."
+      ],
+      "type": "pubkey",
+      "value": "9eLB6vhwmmQmtmLXYUTpjT8aQhNZwvcZXTuZiKJVk6Pa"
+    },
+    {
+      "name": "TFE_TRANSFER_HOOK_PROGRAM_ID",
+      "docs": [
+        "`tfe_transfer_hook`'s real, deployed program ID (see /Users/victorramos/Desktop/tfe_transfer_hook).",
+        "The Transfer Hook checks that the top-level instruction's program is `tfe_exchange` — this",
+        "program is the only one authorized to move talent shares, per that check."
+      ],
+      "type": "pubkey",
+      "value": "AVp2WjNdFj6g1inw79m9KQ5oc7EMKzRknH14HVZfS3nW"
+    },
+    {
+      "name": "TRADE_SEED",
+      "docs": [
+        "Per-trade PDA, seeds `[TRADE_SEED, trade_id.to_le_bytes()]`."
+      ],
+      "type": "bytes",
+      "value": "[116, 114, 97, 100, 101]"
+    }
+  ]
+}
