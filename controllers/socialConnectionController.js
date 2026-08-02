@@ -125,6 +125,9 @@ export const handleCallback = async (req, res) => {
           engagementRate: account.engagementRate ?? null,
           engagementRateSource: account.engagementRateSource ?? null,
           avgViewsPerPost: account.avgViewsPerPost ?? null,
+          totalViews: account.totalViews ?? null,
+          videoCount: account.videoCount ?? null,
+          accountCreatedAt: account.accountCreatedAt ?? null,
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           tokenExpiresAt,
@@ -235,6 +238,11 @@ export const refreshConnection = async (req, res) => {
       conn.engagementRate = account.engagementRate ?? null;
       conn.engagementRateSource = account.engagementRateSource ?? null;
       conn.avgViewsPerPost = account.avgViewsPerPost ?? null;
+      conn.totalViews = account.totalViews ?? null;
+      conn.videoCount = account.videoCount ?? null;
+      // A channel's creation date never legitimately changes — preserve the
+      // existing value if the provider ever omits it on refresh.
+      conn.accountCreatedAt = account.accountCreatedAt ?? conn.accountCreatedAt;
       conn.lastError = null;
       conn.lastSyncedAt = new Date();
       await conn.save();

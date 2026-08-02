@@ -1,8 +1,7 @@
 import puppeteer from "puppeteer";
-import fs from "fs";
 export default async function getTwitterFollowerCount(username) {
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
   const page = await browser.newPage();
@@ -19,11 +18,6 @@ export default async function getTwitterFollowerCount(username) {
       waitUntil: "networkidle2",
       timeout: 100000,
     });
-
-    // Debug: Save full HTML for inspection
-    const html = await page.content();
-    fs.writeFileSync(`${username}_debug.html`, html);
-    // console.log(`Saved full HTML to ${username}_debug.html`);
 
     // Wait for profile to load
     await page.waitForSelector('div[data-testid="UserName"]', {
@@ -122,7 +116,6 @@ export default async function getTwitterFollowerCount(username) {
     console.dir(followerCount, { depth: null, colors: true });
 
     if (!followerCount?.value) {
-      await page.screenshot({ path: `${username}_debug.png` });
       throw new Error("Follower count element not found");
     }
 
@@ -140,7 +133,6 @@ export default async function getTwitterFollowerCount(username) {
       username: username,
       followerCount: null,
       error: error.message,
-      debugFiles: [`${username}_debug.html`, `${username}_debug.png`],
     };
   } finally {
     await browser.close();

@@ -87,6 +87,16 @@ export default {
       username: channel.snippet?.title || null,
       profileUrl: `https://www.youtube.com/channel/${channel.id}`,
       followers: Number(channel.statistics?.subscriberCount || 0),
+      // Lifetime channel totals — already present in the same statistics
+      // object above, no extra API call/quota needed. FameScore v2 uses
+      // these to price a channel on views as well as subscribers (see
+      // services/famescoreService.js's YouTube max(subscriber, views) value).
+      totalViews: Number(channel.statistics?.viewCount || 0),
+      videoCount: Number(channel.statistics?.videoCount || 0),
+      // Real channel creation date — the only platform in this codebase
+      // whose API exposes actual account age (used for the new/mature
+      // growth-floor distinction in famescoreConfig.js).
+      accountCreatedAt: channel.snippet?.publishedAt ? new Date(channel.snippet.publishedAt) : null,
       ...engagement,
     };
   },

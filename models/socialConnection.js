@@ -45,6 +45,13 @@ const socialConnectionSchema = new mongoose.Schema(
       default: null,
     },
     avgViewsPerPost: { type: Number, default: null },
+    // YouTube-only today (see services/socialProviders/youtube.js) — lifetime
+    // channel totals and real account-creation date, all pulled from the
+    // same API call as followers/engagement, no extra quota cost. Null for
+    // every other platform, whose APIs/scrapers don't expose this.
+    totalViews: { type: Number, default: null },
+    videoCount: { type: Number, default: null },
+    accountCreatedAt: { type: Date, default: null },
 
     // OAuth material. select:false so it is never returned by default queries
     // and never leaks through the API. Needed to refresh follower counts later.

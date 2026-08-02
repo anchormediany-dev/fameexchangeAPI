@@ -10,7 +10,7 @@ export const getTiktokFollowers = async (req, res) => {
 
   try {
     const browser = await puppeteer.launch({
-      headless: false, // You can turn this off later if it works
+      headless: "new",
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
