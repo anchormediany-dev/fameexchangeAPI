@@ -23,10 +23,10 @@ export const createProduct = async (req, res) => {
       });
     }
 
-    // Get image from uploaded file
+    // Get image from uploaded file (S3 — see utils/multer_single_file_upload copy.js)
     let image = "";
     if (req.file) {
-      image = req.file.path;
+      image = req.file.location;
     } else {
       return res.status(400).json({
         success: false,
@@ -171,7 +171,7 @@ export const updateProduct = async (req, res) => {
 
     // Update image if new file uploaded
     if (req.file) {
-      product.image = req.file.path;
+      product.image = req.file.location;
     }
 
     await product.save();

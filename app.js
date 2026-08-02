@@ -170,6 +170,11 @@ app.use("/api/admin", adminTradingRoutes);
 app.use("/api/futures", futuresRoutes);
 app.use("/api/famescore", famescoreRoutes);
 
+// Legacy fallback only — new uploads go straight to S3 (config/s3Config.js,
+// utils/*_upload*.js) and never land here. Serves any pre-migration local
+// files still present; on a fresh container (empty ephemeral disk) this
+// route simply 404s, which is fine once scripts/migrateUploadsToS3.js has
+// been run against the old deployment's uploads/ directory.
 app.use("/uploads", express.static("uploads"));
 // Health Check Endpoint
 app.get("/health", (req, res) => {

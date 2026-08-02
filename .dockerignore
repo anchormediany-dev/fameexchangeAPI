@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+uploads
+logs
+*.log
+.git
+.gitignore
+.nvmrc
+README.md
+*_debug.html
+*_debug.png
+services/solana/*.ts

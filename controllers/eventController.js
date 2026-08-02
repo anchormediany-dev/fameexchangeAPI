@@ -335,10 +335,10 @@ export const createEvent = async (req, res) => {
           "Event datetime must be a valid future time (ISO 8601 with timezone recommended)",
       });
 
-    // files (optional)
-    const logo = req.files?.logo?.[0]?.path;
-    const event_cover = req.files?.event_cover?.[0]?.path;
-    const event_images = (req.files?.event_images || []).map((f) => f.path);
+    // files (optional) — multer-s3 sets .location to the full public URL
+    const logo = req.files?.logo?.[0]?.location;
+    const event_cover = req.files?.event_cover?.[0]?.location;
+    const event_images = (req.files?.event_images || []).map((f) => f.location);
 
     // ------------------ COORDINATES LOGIC (do not skip) ------------------
 
@@ -753,11 +753,11 @@ export const updateEvent = async (req, res) => {
       }
     }
 
-    // ✅ Files
-    const logo = req.files?.logo?.[0]?.path || event.logo;
-    const eventcover = req.files?.event_cover?.[0]?.path || event.eventcover;
+    // ✅ Files — multer-s3 sets .location to the full public URL
+    const logo = req.files?.logo?.[0]?.location || event.logo;
+    const eventcover = req.files?.event_cover?.[0]?.location || event.eventcover;
     const eventimages = req.files?.event_images?.length
-      ? req.files.event_images.map((file) => file.path)
+      ? req.files.event_images.map((file) => file.location)
       : event.eventimages;
 
     // ✅ Update fields

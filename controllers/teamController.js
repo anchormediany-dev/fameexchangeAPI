@@ -1,6 +1,7 @@
 // controllers/teamController.js
 import mongoose from "mongoose";
 import TeamMember from "../models/teamMember.js";
+import { keyFromPublicUrl, deleteS3Object } from "../config/s3Config.js";
 
 // PUBLIC: visible only
 export const listPublicTeam = async (_req, res) => {
@@ -26,13 +27,6 @@ export const listTeam = async (_req, res) => {
   }
 };
 
-const toPublicUrl = (filename) => `/${filename}`;
-const toAbsPath = (publicUrl) => {
-  // publicUrl like: /uploads/team/xxx.png  -> absolute path on disk
-  const rel = publicUrl.startsWith("/") ? publicUrl.slice(1) : publicUrl;
-  return path.join(process.cwd(), rel);
-};
-
 // ADMIN: create
 export const createTeam = async (req, res) => {
   try {
@@ -52,11 +46,9 @@ export const createTeam = async (req, res) => {
         .json({ success: false, message: "Name and title are required" });
     }
 
-    // console.log(req.file);
-    // Prefer uploaded file over imageUrl string
-    const finalImageUrl = req.file
-      ? toPublicUrl(req.file.path)
-      : imageUrl || "";
+    // Prefer uploaded file over imageUrl string — multer-s3 sets
+    // req.file.location to the full public S3/CDN URL directly.
+    const finalImageUrl = req.file ? req.file.location : imageUrl || "";
 
     const created = await TeamMember.create({
       name,
@@ -91,7 +83,7 @@ export const updateTeam = async (req, res) => {
     // If a new file is uploaded, use it and later delete the old image (if different)
     let oldImageUrl = existing.imageUrl || "";
     if (req.file) {
-      updates.imageUrl = toPublicUrl(req.file.path);
+      updates.imageUrl = req.file.location;
     }
 
     const updated = await TeamMember.findByIdAndUpdate(id, updates, {
@@ -99,13 +91,12 @@ export const updateTeam = async (req, res) => {
       runValidators: true,
     });
 
-    // Delete previous image if we replaced it
+    // Delete previous image if we replaced it. keyFromPublicUrl returns null
+    // for anything that isn't one of our own S3/CDN URLs (e.g. a legacy
+    // local "/uploads/..." path from before the S3 migration) — deletion is
+    // just skipped for those rather than erroring.
     if (req.file && oldImageUrl && oldImageUrl !== updated.imageUrl) {
-      try {
-        await fs.unlink(toAbsPath(oldImageUrl));
-      } catch {
-        // ignore missing file or unlink errors
-      }
+      await deleteS3Object(keyFromPublicUrl(oldImageUrl));
     }
 
     res.json({ success: true, message: "Updated", data: updated });

@@ -634,15 +634,9 @@ export const uploadTalentImage = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Talent not found" });
     }
-    // multer stores under uploads/profile (see utils/profile_images.js).
-    // req.file.path gives the relative on-disk path which we normalize.
-    const relPath = (req.file.path || "")
-      .replace(/\\/g, "/")
-      .replace(/^\/?/, "/");
-    const publicPath = relPath.startsWith("/uploads/")
-      ? relPath
-      : `/uploads/${req.file.filename}`;
-    talent.image = publicPath;
+    // multer-s3 stores under profile/ (see utils/profile_images.js) and
+    // sets req.file.location to the full public S3/CDN URL directly.
+    talent.image = req.file.location;
     await talent.save();
     return res.json({ success: true, data: talent.toDisplay() });
   } catch (err) {

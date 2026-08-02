@@ -163,10 +163,11 @@ export const updateUserProfile = async (req, res) => {
     let updatedImages = existingUser.images || [];
 
     if (req.files && req.files.length > 0) {
+      // multer-s3 (see utils/multer_multiple_file_upload.js) sets
+      // file.location to the full public S3/CDN URL directly.
       const uploadedPaths = req.files.map((file) => ({
-        // id: new Types.ObjectId(),
-        fileUrl: file.path.replace(/\\/g, "/"), // Ensure forward slashes
-      })); // uses full path
+        fileUrl: file.location,
+      }));
       updatedImages = [...updatedImages, ...uploadedPaths];
     }
 
@@ -326,12 +327,9 @@ export const uploadUserImage = async (req, res) => {
         .status(400)
         .json({ success: false, message: "No image file provided" });
     }
-    const relPath = (req.file.path || "")
-      .replace(/\\/g, "/")
-      .replace(/^\/?/, "/");
-    const publicPath = relPath.startsWith("/uploads/")
-      ? relPath
-      : `/uploads/${req.file.filename}`;
+    // multer-s3 (see utils/profile_images.js) sets req.file.location to the
+    // full public S3/CDN URL directly.
+    const publicPath = req.file.location;
     const user = await User.findById(id);
     if (!user) {
       return res
