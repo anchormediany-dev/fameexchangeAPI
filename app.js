@@ -6,7 +6,20 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import mongoose from "mongoose";
+import * as Sentry from "@sentry/node";
 dotenv.config();
+
+// Must run before any other imports that might throw, and before the
+// Express app is created — Sentry.init() sets up its instrumentation via
+// import hooks. No-ops entirely if SENTRY_DSN isn't set (e.g. local dev),
+// so this is always safe to leave in.
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || "development",
+    tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 0,
+  });
+}
 import userRoutes from "./routes/user.js";
 import authRoutes from "./routes/auth.js";
 import userDocumentRoutes from "./routes/userDocuments.js";
@@ -51,9 +64,11 @@ import { startDividendScheduler } from "./services/dividendScheduler.js";
 // ── Global process error guards ──────────────────────────────────────────────
 process.on("unhandledRejection", (reason, promise) => {
   console.error("[unhandledRejection]", { promise, reason });
+  if (process.env.SENTRY_DSN) Sentry.captureException(reason);
 });
 process.on("uncaughtException", (err) => {
   console.error("[uncaughtException]", err);
+  if (process.env.SENTRY_DSN) Sentry.captureException(err);
   process.exit(1);
 });
 
@@ -192,6 +207,11 @@ app.get("/health", (req, res) => {
 app.use((req, res, next) => {
   res.status(404).json({ message: "Route not found" });
 });
+
+// Must be registered after all routes but before the custom error handler
+// below, so Sentry sees the error before this handler turns it into a
+// generic response.
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
