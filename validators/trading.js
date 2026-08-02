@@ -62,3 +62,12 @@ export const adjustPriceSchema = z.object({
   new_price: z.number({ required_error: "New price is required" }).positive("Price must be positive"),
   reason: z.string().optional(),
 });
+
+export const createStakeSchema = z.object({
+  talent_id: z.string({ required_error: "Talent ID is required" }).min(1),
+  amount: z.number({ required_error: "Amount is required" }).positive("Amount must be positive"),
+  lock_period_days: z.number({ required_error: "lock_period_days is required" }).refine(
+    (v) => [30, 90, 180, 365].includes(v),
+    { message: "lock_period_days must be 30, 90, 180, or 365" }
+  ),
+});

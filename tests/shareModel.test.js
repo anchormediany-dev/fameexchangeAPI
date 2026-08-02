@@ -11,7 +11,7 @@ test("computeShareAllocation: valuation in the $50K-$200K tier targets a $10/sha
   assert.equal(result.targetSharePrice, 10);
   assert.equal(result.totalShares, 10000);
   assert.equal(result.initialSharePrice, 10);
-  assert.equal(result.sharesInLiquidityPool, Math.round(10000 * 0.1125)); // flat 11.25%, unchanged
+  assert.equal(result.sharesInLiquidityPool, Math.round(10000 * 0.25)); // flat 25% — matches the talent-revenue-share system's LIQUIDITY bucket (was 11.25%)
 });
 
 test("computeShareAllocation: valuation in the $1M-$5M tier targets a $50/share price, differentiated from a smaller talent", () => {

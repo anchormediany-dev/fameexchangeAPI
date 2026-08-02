@@ -11,6 +11,7 @@ import User from "../models/user.js";
 import { calcPoolBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
+import { initializeVestingAndEarnings } from "./vestingService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
 import { isKycVerified } from "../config/kycConfig.js";
@@ -318,6 +319,8 @@ export async function graduateTalentToTradeable(talent) {
   claimed.ask_price = D128(ask);
   claimed.previous_close_price = D128(initialSharePrice);
   await claimed.save();
+
+  await initializeVestingAndEarnings(claimed, { totalShares, sharesInLiquidityPool, initialSharePrice });
 
   // Records the real listing price (not the stale futures-tier percentile
   // price a recalculation may have just written moments earlier in the same

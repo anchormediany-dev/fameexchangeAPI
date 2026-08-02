@@ -35,6 +35,7 @@ import productRoutes from "./routes/productRoutes.js";
 import talentTradingRoutes from "./routes/talentRoutes.js";
 import tradeRoutes from "./routes/tradeRoutes.js";
 import positionRoutes from "./routes/positionRoutes.js";
+import stakingRoutes from "./routes/stakingRoutes.js";
 import walletRoutes from "./routes/walletRoutes.js";
 import adminTradingRoutes from "./routes/adminTradingRoutes.js";
 import futuresRoutes from "./routes/futuresRoutes.js";
@@ -42,6 +43,10 @@ import famescoreRoutes from "./routes/famescoreRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 import { startFameScoreScheduler } from "./services/famescoreScheduler.js";
 import { startFuturesScheduler } from "./services/futuresScheduler.js";
+import { startVestingUnlockScheduler } from "./services/vestingUnlockScheduler.js";
+import { startStakeUnlockScheduler } from "./services/stakeUnlockScheduler.js";
+import { startRoyaltyPayoutScheduler } from "./services/royaltyPayoutScheduler.js";
+import { startDividendScheduler } from "./services/dividendScheduler.js";
 
 // ── Global process error guards ──────────────────────────────────────────────
 process.on("unhandledRejection", (reason, promise) => {
@@ -118,6 +123,10 @@ createInitialKeyIfNotExists()
 
 startFameScoreScheduler();
 startFuturesScheduler();
+startVestingUnlockScheduler();
+startStakeUnlockScheduler();
+startRoyaltyPayoutScheduler();
+startDividendScheduler();
 
 // Routes
 app.use("/api/user", userRoutes);
@@ -155,6 +164,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/talents", talentTradingRoutes);
 app.use("/api/trades", tradeRoutes);
 app.use("/api/positions", positionRoutes);
+app.use("/api/staking", stakingRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminTradingRoutes);
 app.use("/api/futures", futuresRoutes);

@@ -14,6 +14,7 @@ import {
   recalculateAllValuations,
 } from "../controllers/talentController.js";
 import { listLedgerEntries, verifyLedger } from "../controllers/ledgerController.js";
+import { grantBrandAmbassadorBonus } from "../controllers/vestingController.js";
 import { simulatePledge, listPledgesForTalent } from "../controllers/futuresPledgeController.js";
 import {
   getRevenueSummaryHandler,
@@ -29,6 +30,12 @@ router.put("/talents/:id", auth_key_header, auth_admin, updateTalent);
 router.post("/talents/:id/adjust-price", auth_key_header, auth_admin, adjustTalentPrice);
 router.get("/talents/preview-famescore", auth_key_header, auth_admin, previewFameScore);
 router.post("/talents/:id/recalculate-valuation", auth_key_header, auth_admin, recalculateValuation);
+router.post(
+  "/talents/:id/brand-ambassador-bonus-unlock",
+  auth_key_header,
+  auth_admin,
+  grantBrandAmbassadorBonus
+);
 router.post("/talents/recalculate-all-valuations", auth_key_header, auth_admin, recalculateAllValuations);
 router.put(
   "/talents/:id/image",

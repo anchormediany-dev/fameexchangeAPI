@@ -13,6 +13,7 @@ import {
 } from "../services/famescoreService.js";
 import { appendLedgerEntry } from "../services/ledgerService.js";
 import { computeShareAllocation } from "../services/shareAllocationService.js";
+import { initializeVestingAndEarnings } from "../services/vestingService.js";
 import { recordRevenueEvent } from "../services/revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
 import { isKycVerified } from "../config/kycConfig.js";
@@ -255,6 +256,12 @@ export const getTalentById = async (req, res) => {
       image: talent.image,
       description: talent.description,
       status: talent.status,
+      tier: talent.tier,
+      // Canonical "tradeable" definition (see models/talentModel.js) — tier
+      // can only reach "tradeable" after graduateTalentToTradeable() has
+      // already confirmed KYC, so this single flag covers both "qualified"
+      // and "KYC passed" for the certified-tradeable badge.
+      is_certified_tradeable: talent.tier === "tradeable" && talent.status === "active",
       current_price: currentPrice,
       bid_price: bid,
       ask_price: ask,
@@ -406,6 +413,10 @@ export const createTalent = async (req, res) => {
           }
         : {}),
     });
+
+    if (shareAllocation) {
+      await initializeVestingAndEarnings(talent, shareAllocation);
+    }
 
     // Write initial price history
     const priceHistoryEntry = await TalentPriceHistory.create({

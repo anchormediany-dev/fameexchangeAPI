@@ -8,6 +8,8 @@ import Session from "../models/sessionModel.js";
 import FanInverseRequest from "../models/fanInverseRequestModel.js";
 import User from "../models/user.js";
 import Notification from "../models/notificationModel.js";
+import Talent from "../models/talentModel.js";
+import { logTalentRevenue } from "../services/talentRevenueService.js";
 import {
   calcUnitPriceFromEvent,
   getDiscountPercentFromEvent,
@@ -702,6 +704,27 @@ export const confirmInverseSessionPayment = async (req, res, next) => {
       sessionId: session._id,
       paymentId: payment?._id,
     });
+
+    // Best-effort talent-revenue logging (feeds the quarterly dividend pool
+    // calculation, services/dividendScheduler.js) — only when this booked
+    // User also has a real, tradeable Talent doc. A booking-only talent
+    // with no Talent doc has nowhere to attribute the revenue to; skip
+    // rather than error the payment.
+    try {
+      const tradeableTalent = await Talent.findOne({ userId: talent._id }).lean();
+      if (tradeableTalent && payment?.amount) {
+        await logTalentRevenue({
+          talent_id: tradeableTalent._id,
+          talent_name: tradeableTalent.name,
+          revenue_type: "appearance_fees",
+          amount: payment.amount,
+          source_id: fanRequest._id,
+          source_description: `Inverse session booking (${session.sessionLength || ""}min)`.trim(),
+        });
+      }
+    } catch (err) {
+      console.error("logTalentRevenue (appearance_fees) failed (non-fatal):", err.message);
+    }
 
     // Best-effort notifications (do not fail the request if notifications fail)
     try {

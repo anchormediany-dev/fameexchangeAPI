@@ -2,11 +2,13 @@ import Product from "../models/productModel.js";
 import mongoose from "mongoose";
 import stripe from "../services/stripeClient.js";
 import Payment from "../models/paymentModel.js";
+import Talent from "../models/talentModel.js";
+import { logTalentRevenue } from "../services/talentRevenueService.js";
 
 // CREATE - Add new product
 export const createProduct = async (req, res) => {
   try {
-    const { title, description, price } = req.body;
+    const { title, description, price, talentId } = req.body;
 
     // Validate required fields
     const missingFields = [];
@@ -33,11 +35,16 @@ export const createProduct = async (req, res) => {
     }
 
     // Create new product
+    // talentId is optional — attributes this product's sales to a talent's
+    // dividend revenue pool (services/talentRevenueService.js) when set.
+    // Products without one (existing/legacy, or merch not tied to a
+    // specific talent) simply don't get logged as talent revenue.
     const product = new Product({
       title,
       description,
       price,
       image,
+      ...(talentId ? { talentId } : {}),
     });
 
     await product.save();
@@ -353,7 +360,7 @@ export const stripeProductWebhookNoSig = async (req, res) => {
       zip: pi.metadata?.billing_zip || "",
       country: pi.metadata?.billing_country || "",
     };
-    await Payment.findOneAndUpdate(
+    const payment = await Payment.findOneAndUpdate(
       { stripePaymentIntentId: paymentIntentId },
       {
         status,
@@ -365,6 +372,30 @@ export const stripeProductWebhookNoSig = async (req, res) => {
       },
       { new: true }
     );
+
+    // Best-effort talent-revenue logging — only when the purchased product
+    // is attributed to a talent (Product.talentId, optional). Existing/
+    // legacy products with no talentId simply aren't logged.
+    if (status === "succeeded" && pi.metadata?.productId) {
+      try {
+        const product = await Product.findById(pi.metadata.productId).lean();
+        if (product?.talentId && payment?.amount) {
+          const talent = await Talent.findById(product.talentId).lean();
+          if (talent) {
+            await logTalentRevenue({
+              talent_id: talent._id,
+              talent_name: talent.name,
+              revenue_type: "merchandise",
+              amount: payment.amount,
+              source_id: payment._id,
+              source_description: `Merchandise sale: ${product.title}`,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("logTalentRevenue (merchandise) failed (non-fatal):", err.message);
+      }
+    }
   }
   res.json({ received: true });
 };

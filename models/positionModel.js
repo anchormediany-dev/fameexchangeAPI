@@ -30,6 +30,14 @@ const positionSchema = new mongoose.Schema(
     },
     opened_at: { type: Date, default: Date.now },
     closed_at: { type: Date, default: null },
+    // Set while this position is locked inside an active stake
+    // (services/stakingService.js) — closeTrade() rejects closing a
+    // position with this set; only unstaking (which never sells) clears it.
+    locked_by_stake_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "StakePosition",
+      default: null,
+    },
   },
   { timestamps: true }
 );

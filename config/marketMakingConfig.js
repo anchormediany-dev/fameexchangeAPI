@@ -11,9 +11,14 @@
 // services/tradingService.js openTrade()).
 
 // Fraction of total_shares seeded into the liquidity pool at listing.
-// Reduced 25% from an original 0.15 baseline per business decision.
+// 0.25 matches the talent-revenue-share system's "LIQUIDITY" bucket exactly
+// (see services/vestingService.js — the other two buckets are 50% talent-
+// retained/vesting and 25% remaining inert supply). Previously 0.1125
+// (itself a deliberate reduction from an original 0.15 baseline) — this
+// change applies to new talents going forward only, never retroactive to
+// already-tradeable talents.
 export const MARKET_MAKING = {
-  liquidityPoolAllocation: 0.1125,
+  liquidityPoolAllocation: 0.25,
   spreadPercent: 0.03, // 3% — base half-spread width when the pool is full
   maxSpreadPercent: 0.05, // 5% — half-spread width when the pool is empty
 };

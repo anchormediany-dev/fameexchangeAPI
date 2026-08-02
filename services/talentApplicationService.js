@@ -6,6 +6,7 @@ import { previewValuation } from "./famescoreService.js";
 import { calcBidAsk, calcPoolBidAsk } from "./tradingService.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { computeShareAllocation } from "./shareAllocationService.js";
+import { initializeVestingAndEarnings } from "./vestingService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
 import { isKycVerified } from "../config/kycConfig.js";
@@ -144,6 +145,10 @@ export async function applyToBeTalent(user) {
         }
       : {}),
   });
+
+  if (shareAllocation) {
+    await initializeVestingAndEarnings(talent, shareAllocation);
+  }
 
   const priceHistoryEntry = await TalentPriceHistory.create({
     talent_id: talent._id,

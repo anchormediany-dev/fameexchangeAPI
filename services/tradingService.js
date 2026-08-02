@@ -10,32 +10,67 @@ import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import { resolveTalent } from "./talentResolver.js";
 import { appendLedgerEntry } from "./ledgerService.js";
 import { recordRevenueEvent } from "./revenueTrackerService.js";
+import { accrueTradingRoyalty } from "./talentEarningsService.js";
 import { MARKET_MAKING } from "../config/marketMakingConfig.js";
 import {
   TRANSACTION_FEE_PERCENT,
   LAUNCH_PROMO_DAYS,
   LAUNCH_PROMO_FEE_PERCENT,
+  TRADING_ROYALTY_PERCENT,
 } from "../config/feeConfig.js";
 
 const d = (v) => parseFloat(v?.toString?.() ?? v ?? 0);
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
 
+// openTrade's `trade` is a live Mongoose document (not .lean()'d), so its
+// Decimal128 fields serialize to { $numberDecimal: "..." } over JSON rather
+// than a plain number — which is what was rendering as "$NaN" on the trade
+// confirmation modal. Mirrors the decimalToFloat conversion tradingController.js
+// already applies to lean-fetched trades (getTradeById/getTradeHistory).
+const tradeToDisplay = (trade) => ({
+  ...trade.toObject(),
+  price: d(trade.price),
+  amount: d(trade.amount),
+  fees: d(trade.fees),
+  pnl: trade.pnl != null ? d(trade.pnl) : null,
+  wallet_balance_after: d(trade.wallet_balance_after),
+});
+
 // ── Fee config ──────────────────────────────────────────────────────
 const QUOTE_EXPIRY_SECONDS = 10;
 
 /**
- * 0% for LAUNCH_PROMO_DAYS from whichever date this talent actually became
- * tradeable (graduated_at if it was ever futures-tier, else createdAt),
- * TRANSACTION_FEE_PERCENT after that. Replaces the old flat FEE_RATE with
- * no promo window.
+ * True for LAUNCH_PROMO_DAYS from whichever date this talent actually became
+ * tradeable (graduated_at if it was ever futures-tier, else createdAt).
+ * Shared by getTransactionFee() and getTradingRoyalty() so both waive on
+ * the exact same window — a talent's launch promo shouldn't make trading
+ * more expensive via one fee while waiving another.
  */
-function getTransactionFee(amount, talent) {
+function isInPromoWindow(talent) {
   const anchor = talent.graduated_at || talent.createdAt;
   const promoEndsAt = anchor
     ? new Date(new Date(anchor).getTime() + LAUNCH_PROMO_DAYS * 24 * 60 * 60 * 1000)
     : null;
-  const inPromo = promoEndsAt ? Date.now() < promoEndsAt.getTime() : false;
-  const rate = inPromo ? LAUNCH_PROMO_FEE_PERCENT : TRANSACTION_FEE_PERCENT;
+  return promoEndsAt ? Date.now() < promoEndsAt.getTime() : false;
+}
+
+/**
+ * 0% for LAUNCH_PROMO_DAYS from whichever date this talent actually became
+ * tradeable, TRANSACTION_FEE_PERCENT after that. Replaces the old flat
+ * FEE_RATE with no promo window.
+ */
+function getTransactionFee(amount, talent) {
+  const rate = isInPromoWindow(talent) ? LAUNCH_PROMO_FEE_PERCENT : TRANSACTION_FEE_PERCENT;
+  return +(amount * rate).toFixed(2);
+}
+
+/**
+ * Talent royalty — paid to the talent, not the house, on top of the
+ * transaction fee above. Waives to 0% during the same launch promo window
+ * as the transaction fee (see isInPromoWindow()).
+ */
+function getTradingRoyalty(amount, talent) {
+  const rate = isInPromoWindow(talent) ? 0 : TRADING_ROYALTY_PERCENT;
   return +(amount * rate).toFixed(2);
 }
 
@@ -75,6 +110,7 @@ export {
   calcPoolBidAsk,
   calcPoolPriceImpact,
   getTransactionFee,
+  getTradingRoyalty,
 };
 
 // ── Optional transaction helper ─────────────────────────────────────
@@ -257,7 +293,7 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     if (existing) {
       const position = await Position.findById(existing.position_id);
       const wallet = await Wallet.findOne({ userId });
-      return { trade: existing, position, wallet: wallet?.toDisplay() };
+      return { trade: tradeToDisplay(existing), position, wallet: wallet?.toDisplay() };
     }
   }
 
@@ -303,7 +339,8 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
     // may be slightly less than the originally-requested amount.
     const actualAmount = +(units * entryPrice).toFixed(2);
     const fee = getTransactionFee(actualAmount, talent);
-    const totalRequired = +(actualAmount + fee).toFixed(2);
+    const royalty = getTradingRoyalty(actualAmount, talent);
+    const totalRequired = +(actualAmount + fee + royalty).toFixed(2);
 
     // Step 6 – Wallet check
     const wallet = await Wallet.findOne({ userId }).session(session);
@@ -439,9 +476,11 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
         ask: newBidAsk.ask,
       },
       _ledger: { walletTransaction, priceHistoryEntry },
+      _royalty: royalty,
+      _talentName: talent.name,
     };
   }).then(async (result) => {
-    const { _ledger, ...publicResult } = result;
+    const { _ledger, _royalty, _talentName, ...publicResult } = result;
     // Chain AFTER the transaction has committed — a ledger entry must never
     // exist for a trade that didn't actually happen. Appends are serialized
     // in-process (see ledgerService) so this trio stays in strict order.
@@ -468,7 +507,17 @@ export async function openTrade(userId, talentId, side, amount, quotePrice, idem
         notes: "trade_open",
       });
     }
-    return publicResult;
+    if (_royalty > 0) {
+      await accrueTradingRoyalty({
+        talentId: result.trade.talent_id,
+        talentName: _talentName,
+        tradeId: result.trade._id,
+        tradeVolume: d(result.trade.amount),
+        royaltyAmount: _royalty,
+        tradeType: side,
+      });
+    }
+    return { ...publicResult, trade: tradeToDisplay(publicResult.trade) };
   });
 }
 
@@ -496,7 +545,8 @@ export async function closePreview(positionId, userId) {
   }
 
   const fee = getTransactionFee(Math.abs(exitPrice * units), talent);
-  const netSettlement = +(invested + pnl - fee).toFixed(2);
+  const royalty = getTradingRoyalty(Math.abs(exitPrice * units), talent);
+  const netSettlement = +(invested + pnl - fee - royalty).toFixed(2);
 
   return {
     position_id: position._id,
@@ -508,6 +558,7 @@ export async function closePreview(positionId, userId) {
     invested_amount: invested,
     realized_pnl: pnl,
     fees: fee,
+    royalty,
     net_settlement: netSettlement,
   };
 }
@@ -519,6 +570,13 @@ export async function closeTrade(positionId, userId) {
     const position = await Position.findOne({ _id: positionId, user_id: userId }).session(session);
     if (!position) throw new Error("Position not found");
     if (position.status !== "open") throw new Error("Position is already closed");
+    // Staking guard — a position locked in an active stake can only be
+    // freed via unstaking (services/stakingService.js), which never sells
+    // it. This prevents the staking mechanism's "never force a sale"
+    // guarantee from being bypassed via the ordinary close-position path.
+    if (position.locked_by_stake_id) {
+      throw new Error("This position is locked in an active stake. Unstake first.");
+    }
 
     // Step 2 – Load talent
     const talent = await Talent.findById(position.talent_id).session(session);
@@ -539,7 +597,8 @@ export async function closeTrade(positionId, userId) {
     }
 
     const fee = getTransactionFee(Math.abs(exitPrice * units), talent);
-    const netSettlement = +(invested + pnl - fee).toFixed(2);
+    const royalty = getTradingRoyalty(Math.abs(exitPrice * units), talent);
+    const netSettlement = +(invested + pnl - fee - royalty).toFixed(2);
 
     // Step 4 – Close position
     position.status = "closed";
@@ -659,9 +718,11 @@ export async function closeTrade(positionId, userId) {
         ask: newBidAsk.ask,
       },
       _ledger: { walletTransaction, priceHistoryEntry },
+      _royalty: royalty,
+      _talentName: talent.name,
     };
   }).then(async (result) => {
-    const { _ledger, ...publicResult } = result;
+    const { _ledger, _royalty, _talentName, ...publicResult } = result;
     await appendLedgerEntry("trade", result.trade._id, result.trade.toObject());
     await appendLedgerEntry(
       "wallet_transaction",
@@ -685,7 +746,17 @@ export async function closeTrade(positionId, userId) {
         notes: "trade_close",
       });
     }
-    return publicResult;
+    if (_royalty > 0) {
+      await accrueTradingRoyalty({
+        talentId: result.trade.talent_id,
+        talentName: _talentName,
+        tradeId: result.trade._id,
+        tradeVolume: d(result.trade.amount),
+        royaltyAmount: _royalty,
+        tradeType: result.position.side,
+      });
+    }
+    return { ...publicResult, trade: tradeToDisplay(publicResult.trade) };
   });
 }
 

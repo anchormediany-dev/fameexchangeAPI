@@ -10,6 +10,13 @@ export const TRANSACTION_FEE_PERCENT = 0.015; // 1.5%
 export const LAUNCH_PROMO_DAYS = 90;
 export const LAUNCH_PROMO_FEE_PERCENT = 0;
 
+// Talent trading royalty — paid to the TALENT (not the house), on top of
+// the transaction fee above. Waives to 0% during the same launch promo
+// window as the transaction fee (see isInPromoWindow()/getTradingRoyalty()
+// in tradingService.js) — charging a new fee specifically during the
+// window meant to encourage early trading would undercut its own purpose.
+export const TRADING_ROYALTY_PERCENT = 0.005; // 0.5%
+
 // Charged exactly once, at the moment a talent becomes tradeable (signup if
 // immediately qualifying, or Futures graduation) — see
 // futuresPledgeService.graduateTalentToTradeable / talentApplicationService.
