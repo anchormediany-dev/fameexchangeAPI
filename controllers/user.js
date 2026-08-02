@@ -13,6 +13,7 @@ import TeamMember from "../models/teamMember.js";
 import sessionModel from "../models/sessionModel.js";
 import sponsorshipModel from "../models/sponsorshipModel.js";
 import Notification from "../models/notificationModel.js";
+import Talent from "../models/talentModel.js";
 const userProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).lean();
@@ -601,6 +602,14 @@ export const getTalentOverview = async (req, res) => {
       .populate("userId", "name email _id images token_brand_name")
       .populate("sponsoredId", "name email _id images token_brand_name");
 
+    // Certified-tradeable badge signal — canonical "tradeable" definition
+    // (see fameexchangeAPI/models/talentModel.js): tier can only reach
+    // "tradeable" after graduateTalentToTradeable() has already confirmed
+    // KYC, so this single check covers both "qualified" and "KYC passed".
+    const talentDocQ = Talent.findOne({ userId: talentId })
+      .select("tier status")
+      .lean();
+
     // Wait for profile (used for event matching by stage_name as a fallback)
     const [
       profile,
@@ -610,6 +619,7 @@ export const getTalentOverview = async (req, res) => {
       pending,
       sponserships,
       notifications,
+      talentDoc,
     ] = await Promise.all([
       profileQ,
       sessionsQ,
@@ -618,6 +628,7 @@ export const getTalentOverview = async (req, res) => {
       pendingReq,
       sponsershipsQ,
       notificationQ,
+      talentDocQ,
     ]);
 
     if (!profile) {
@@ -625,6 +636,10 @@ export const getTalentOverview = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Talent not found" });
     }
+
+    profile.is_certified_tradeable = Boolean(
+      talentDoc && talentDoc.tier === "tradeable" && talentDoc.status === "active"
+    );
 
     // --- Resolve "friends" as user docs (the "other" side of each accepted friendship) ---
     const mine = String(talentId);
