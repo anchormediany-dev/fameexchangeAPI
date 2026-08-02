@@ -76,45 +76,6 @@ export const getWalletTransactions = async (req, res) => {
   }
 };
 
-// POST /api/wallet/deposit (for testing / admin)
-export const depositFunds = async (req, res) => {
-  try {
-    const { amount } = req.body;
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: "Amount must be positive" });
-    }
-
-    let wallet = await Wallet.findOne({ userId: req.user._id });
-    if (!wallet) {
-      wallet = await Wallet.create({
-        userId: req.user._id,
-        available_balance: D128(0),
-        locked_balance: D128(0),
-        currency: "USD",
-      });
-    }
-
-    const balanceBefore = parseFloat(wallet.available_balance.toString());
-    const balanceAfter = +(balanceBefore + amount).toFixed(2);
-
-    wallet.available_balance = D128(balanceAfter);
-    await wallet.save();
-
-    await WalletTransaction.create({
-      user_id: req.user._id,
-      type: "deposit",
-      amount: D128(amount),
-      balance_before: D128(balanceBefore),
-      balance_after: D128(balanceAfter),
-      reference_type: "deposit",
-    });
-
-    res.json({ success: true, wallet: wallet.toDisplay() });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
 // POST /api/wallet/deposit-intent
 // Body: { amount, currency? }
 // Creates a Stripe PaymentIntent for funding the in-app wallet.
