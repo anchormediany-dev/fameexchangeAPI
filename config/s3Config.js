@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 // Credentials: the SDK's default chain picks these up automatically — an
@@ -10,6 +12,47 @@ export const s3Client = new S3Client({
 
 export const S3_BUCKET = process.env.AWS_S3_BUCKET;
 export const S3_MEDIA_BUCKET = process.env.AWS_S3_MEDIA_BUCKET || S3_BUCKET;
+
+// No bucket configured (e.g. local dev before Phase 5's infra/ exists) —
+// multer-s3 throws synchronously at import time without one, which would
+// crash the whole app on boot. Callers use this to fall back to local disk
+// instead of requiring every developer to have a real S3 bucket set up.
+export const S3_CONFIGURED = Boolean(S3_MEDIA_BUCKET);
+
+/**
+ * Local-disk fallback storage matching multer-s3's OUTPUT SHAPE — sets
+ * req.file.location the same way multer-s3 does, so every controller can
+ * keep reading req.file.location unconditionally regardless of which
+ * storage engine is actually active. Serves through the existing
+ * express.static("/uploads") route (app.js). Dev-only; production always
+ * has S3_CONFIGURED true.
+ */
+export function localDiskFallbackStorage(prefix) {
+  const uploadDir = path.join("uploads", prefix);
+  fs.mkdirSync(uploadDir, { recursive: true });
+
+  return {
+    _handleFile(req, file, cb) {
+      const ext = path.extname(file.originalname);
+      const name = file.originalname.replace(ext, "").replace(/\s+/g, "-");
+      const filename = `${name}-${Date.now()}${ext}`;
+      const destPath = path.join(uploadDir, filename);
+      const outStream = fs.createWriteStream(destPath);
+      file.stream.pipe(outStream);
+      outStream.on("error", cb);
+      outStream.on("finish", () => {
+        const base = process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 5006}`;
+        cb(null, {
+          size: outStream.bytesWritten,
+          location: `${base}/uploads/${prefix}/${filename}`.replace(/([^:])\/\/+/g, "$1/"),
+        });
+      });
+    },
+    _removeFile(req, file, cb) {
+      fs.unlink(file.path || "", () => cb());
+    },
+  };
+}
 
 // If a CloudFront distribution fronts the bucket (AWS_S3_CDN_BASE_URL set),
 // serve through that instead of the raw S3 object URL — lets the CDN get
