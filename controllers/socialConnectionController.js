@@ -121,6 +121,7 @@ export const handleCallback = async (req, res) => {
           providerUserId: account.providerUserId,
           username: account.username,
           profileUrl: account.profileUrl,
+          avatarUrl: account.avatarUrl ?? null,
           followers: Number(account.followers) || 0,
           engagementRate: account.engagementRate ?? null,
           engagementRateSource: account.engagementRateSource ?? null,
@@ -234,6 +235,7 @@ export const refreshConnection = async (req, res) => {
       conn.followers = Number(account.followers) || 0;
       conn.username = account.username || conn.username;
       conn.profileUrl = account.profileUrl || conn.profileUrl;
+      conn.avatarUrl = account.avatarUrl ?? conn.avatarUrl;
       conn.fetchPending = Boolean(account.fetchPending);
       conn.engagementRate = account.engagementRate ?? null;
       conn.engagementRateSource = account.engagementRateSource ?? null;

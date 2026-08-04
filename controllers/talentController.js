@@ -4,6 +4,7 @@ import TalentMarketStats from "../models/talentMarketStatsModel.js";
 import Position from "../models/positionModel.js";
 import User from "../models/user.js";
 import SiteSettings from "../models/siteSettingsModel.js";
+import SocialConnection from "../models/socialConnection.js";
 import { getQuote, getTalentChart, getTalentStats, calcBidAsk, calcPoolBidAsk } from "../services/tradingService.js";
 import { resolveTalent } from "../services/talentResolver.js";
 import {
@@ -778,13 +779,30 @@ export const getFeaturedTalent = async (req, res) => {
     if (!talent) {
       return res.json({ success: true, data: null });
     }
-    const user = talent.userId
-      ? await User.findById(talent.userId)
-          .select(
-            "name full_name images social_youtube social_twitter social_tiktok social_facebook social_insta social_snap"
-          )
-          .lean()
-      : null;
+    const [user, socialConnections] = await Promise.all([
+      talent.userId
+        ? User.findById(talent.userId)
+            .select(
+              "name full_name images social_youtube social_twitter social_tiktok social_facebook social_insta social_snap"
+            )
+            .lean()
+        : null,
+      talent.userId
+        ? SocialConnection.find({ userId: talent.userId, status: "connected" })
+            .select("platform avatarUrl")
+            .lean()
+        : [],
+    ]);
+
+    // Best-available avatar for the "no highlight reel yet" fallback —
+    // YouTube is the only platform with a real fetched avatar today (see
+    // models/socialConnection.js), so it's the only one that can ever
+    // populate this. Stays null (falls through to talent.image on the
+    // frontend) for every other connection state.
+    const socialAvatar =
+      socialConnections.find((c) => c.platform === "youtube" && c.avatarUrl)?.avatarUrl ||
+      socialConnections.find((c) => c.avatarUrl)?.avatarUrl ||
+      null;
 
     const display = Talent.hydrate ? Talent.hydrate(talent).toDisplay() : talent;
     return res.json({
@@ -792,6 +810,7 @@ export const getFeaturedTalent = async (req, res) => {
       data: {
         ...display,
         profile: user || {},
+        social_avatar_url: socialAvatar,
       },
     });
   } catch (err) {

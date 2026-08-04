@@ -28,6 +28,11 @@ const socialConnectionSchema = new mongoose.Schema(
     providerUserId: { type: String }, // channel id / user id / ig user id
     username: { type: String }, // handle / channel title
     profileUrl: { type: String },
+    // Real avatar/thumbnail URL from the platform — only populated today
+    // for YouTube (see services/socialProviders/youtube.js), the only
+    // provider whose fetchAccount() already pulls the channel snippet
+    // this comes from. Stays null for every other platform.
+    avatarUrl: { type: String, default: null },
 
     // The number that feeds social_worth
     followers: { type: Number, default: 0 },

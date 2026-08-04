@@ -86,6 +86,10 @@ export default {
       providerUserId: channel.id,
       username: channel.snippet?.title || null,
       profileUrl: `https://www.youtube.com/channel/${channel.id}`,
+      avatarUrl:
+        channel.snippet?.thumbnails?.high?.url ||
+        channel.snippet?.thumbnails?.default?.url ||
+        null,
       followers: Number(channel.statistics?.subscriberCount || 0),
       // Lifetime channel totals — already present in the same statistics
       // object above, no extra API call/quota needed. FameScore v2 uses
