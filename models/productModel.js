@@ -24,6 +24,14 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // null = untracked/unlimited (no oversell protection applied). A real
+    // number enables it — createProductPaymentIntent rejects purchases that
+    // exceed it, and the Stripe webhook decrements it on success.
+    stock: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
     // Optional talent attribution — lets a merchandise sale be logged as
     // that talent's revenue (services/talentRevenueService.js,
     // controllers/productController.js). Null for existing/legacy products

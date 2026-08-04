@@ -122,6 +122,13 @@ app.post(
     next();
   }
 );
+app.post(
+  "/api/products/webhook",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    next();
+  }
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

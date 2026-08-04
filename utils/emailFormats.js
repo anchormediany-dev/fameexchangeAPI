@@ -211,6 +211,77 @@ ${brand} Team`;
   return { subject, preheader, text, html };
 }
 
+/** ORDER CONFIRMATION — merch store (subject, preheader, text, html) */
+export function getOrderConfirmationEmail({
+  brand = "The Fame Exchange",
+  userName = "there",
+  productTitle = "your item",
+  quantity = 1,
+  amount, // major units, e.g. 125
+  shippingAddress = {}, // { line1, city, state, postal_code, country }
+} = {}) {
+  const amountStr =
+    typeof amount === "number" ? `$${amount.toFixed(2)}` : null;
+  const subject = `Order confirmed: ${productTitle}`;
+  const preheader = `Your order for ${productTitle} is confirmed.`;
+  const addressLine = [
+    shippingAddress.line1,
+    shippingAddress.city,
+    shippingAddress.state,
+    shippingAddress.postal_code,
+    shippingAddress.country,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const text = `Hi ${userName},
+
+Your order is confirmed!
+
+Item: ${productTitle}
+Quantity: ${quantity}${amountStr ? `\nTotal: ${amountStr}` : ""}${
+    addressLine ? `\nShipping to: ${addressLine}` : ""
+  }
+
+We'll be in touch with shipping updates.
+
+${brand} Team`;
+
+  const html = `
+<div style="${baseStyles}">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;visibility:hidden;">${esc(
+    preheader
+  )}</div>
+
+  <p>Hi ${esc(userName)},</p>
+  <p>Your order is confirmed!</p>
+
+  <div style="${cardStyles}">
+    <p style="margin:0 0 6px;"><strong>Item:</strong> ${esc(productTitle)}</p>
+    <p style="margin:0 0 6px;"><strong>Quantity:</strong> ${esc(quantity)}</p>
+    ${
+      amountStr
+        ? `<p style="margin:0 0 6px;"><strong>Total:</strong> ${esc(
+            amountStr
+          )}</p>`
+        : ""
+    }
+    ${
+      addressLine
+        ? `<p style="margin:0 0 6px;"><strong>Shipping to:</strong> ${esc(
+            addressLine
+          )}</p>`
+        : ""
+    }
+  </div>
+
+  <p style="margin-top:16px;">We'll be in touch with shipping updates.</p>
+  <p>Cheers,<br/>${esc(brand)} Team</p>
+</div>`.trim();
+
+  return { subject, preheader, text, html };
+}
+
 /** OTP CODE (subject, preheader, text, html) */
 export function getOtpEmail({ brand = "The Fame Exchange", otp } = {}) {
   const subject = "Your OTP Code";
@@ -463,6 +534,18 @@ export async function sendTicketReminderEmail(to, payload) {
   });
 }
 
+/** Send: Order Confirmation (merch store) */
+export async function sendOrderConfirmationEmail(to, payload) {
+  const { subject, html, text } = getOrderConfirmationEmail(payload);
+  return sendMail({
+    brand: payload?.brand,
+    to,
+    subject,
+    html,
+    text,
+  });
+}
+
 /** Send: KYC Submitted */
 export async function sendKycSubmittedEmail(to, payload) {
   const { subject, html, text } = getKycSubmittedEmail(payload);
@@ -493,8 +576,10 @@ export default {
   sendClaimAccountEmail,
   getSessionReminderEmail,
   getTicketReminderEmail,
+  getOrderConfirmationEmail,
   sendSessionReminderEmail,
   sendTicketReminderEmail,
+  sendOrderConfirmationEmail,
   getKycSubmittedEmail,
   getKycApprovedEmail,
   getKycRejectedEmail,

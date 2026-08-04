@@ -4,11 +4,12 @@ import stripe from "../services/stripeClient.js";
 import Payment from "../models/paymentModel.js";
 import Talent from "../models/talentModel.js";
 import { logTalentRevenue } from "../services/talentRevenueService.js";
+import { sendOrderConfirmationEmail } from "../utils/emailFormats.js";
 
 // CREATE - Add new product
 export const createProduct = async (req, res) => {
   try {
-    const { title, description, price, talentId } = req.body;
+    const { title, description, price, talentId, stock } = req.body;
 
     // Validate required fields
     const missingFields = [];
@@ -44,6 +45,8 @@ export const createProduct = async (req, res) => {
       description,
       price,
       image,
+      // "" (blank field) or undefined -> null (untracked/unlimited stock)
+      stock: stock === "" || stock === undefined ? null : Number(stock),
       ...(talentId ? { talentId } : {}),
     });
 
@@ -145,7 +148,7 @@ export const getProductById = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, price, isActive } = req.body;
+    const { title, description, price, isActive, stock } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -168,6 +171,9 @@ export const updateProduct = async (req, res) => {
     if (description) product.description = description;
     if (price !== undefined && price !== null) product.price = price;
     if (isActive !== undefined) product.isActive = isActive;
+    if (stock !== undefined) {
+      product.stock = stock === "" ? null : Number(stock);
+    }
 
     // Update image if new file uploaded
     if (req.file) {
@@ -239,8 +245,11 @@ export const createProductPaymentIntent = async (req, res) => {
       quantity = 1,
       currency = "usd",
       customerId,
-      billingAddress = {}, // { name, line1, line2, city, state, zip, country }
+      // { name, email, phone, address: { line1, city, state, postal_code, country } }
+      // — matches exactly what ProductCheckoutPage.jsx sends.
+      customer = {},
     } = req.body;
+    const billingAddress = customer.address || {};
     if (!productId) {
       return res
         .status(400)
@@ -251,6 +260,11 @@ export const createProductPaymentIntent = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: "Product not found or inactive" });
+    }
+    if (product.stock !== null && product.stock < quantity) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Not enough stock available" });
     }
     const unitPrice = product.price;
     const amount = unitPrice * quantity;
@@ -265,23 +279,20 @@ export const createProductPaymentIntent = async (req, res) => {
       amount: amountInMinor,
       currency,
       ...(customerId ? { customer: customerId } : {}),
+      ...(customer.email ? { receipt_email: customer.email } : {}),
       automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       metadata: {
         productId: String(product._id),
         userId: String(userId),
         quantity: String(quantity),
         unitPrice: String(unitPrice),
-        ...(billingAddress && typeof billingAddress === "object"
-          ? {
-              billing_name: billingAddress.name || "",
-              billing_line1: billingAddress.line1 || "",
-              billing_line2: billingAddress.line2 || "",
-              billing_city: billingAddress.city || "",
-              billing_state: billingAddress.state || "",
-              billing_zip: billingAddress.zip || "",
-              billing_country: billingAddress.country || "",
-            }
-          : {}),
+        customer_name: customer.name || "",
+        customer_email: customer.email || "",
+        billing_line1: billingAddress.line1 || "",
+        billing_city: billingAddress.city || "",
+        billing_state: billingAddress.state || "",
+        billing_postal_code: billingAddress.postal_code || "",
+        billing_country: billingAddress.country || "",
       },
     });
     // Upsert a local Payment record
@@ -289,6 +300,7 @@ export const createProductPaymentIntent = async (req, res) => {
       { stripePaymentIntentId: pi.id },
       {
         userId,
+        productId: product._id,
         type: "product",
         quantity,
         currency,
@@ -300,7 +312,12 @@ export const createProductPaymentIntent = async (req, res) => {
         meta: {
           title: product.title,
           image: product.image,
-          billingAddress: billingAddress || {},
+          customer: {
+            name: customer.name || "",
+            email: customer.email || "",
+            phone: customer.phone || "",
+          },
+          billingAddress,
         },
       },
       { upsert: true, new: true }
@@ -314,7 +331,7 @@ export const createProductPaymentIntent = async (req, res) => {
       currency,
       title: product.title,
       image: product.image,
-      billingAddress: billingAddress || {},
+      billingAddress,
     });
   } catch (err) {
     console.error("Stripe payment intent error:", err);
@@ -345,40 +362,52 @@ export const stripeProductWebhookNoSig = async (req, res) => {
     event.type === "payment_intent.payment_failed" ||
     event.type === "payment_intent.canceled"
   ) {
-    const pi = event.data;
-    console.log("Received Stripe webhook for PaymentIntent:", pi);
-    // if (!pi?.id) break;
+    const pi = event.data.object;
+    console.log("Received Stripe webhook for PaymentIntent:", pi.id, pi.status);
     const status = pi.status;
     const paymentIntentId = pi.id;
     // Extract billing address from metadata if present
     const billingAddress = {
-      name: pi.metadata?.billing_name || "",
       line1: pi.metadata?.billing_line1 || "",
-      line2: pi.metadata?.billing_line2 || "",
       city: pi.metadata?.billing_city || "",
       state: pi.metadata?.billing_state || "",
-      zip: pi.metadata?.billing_zip || "",
+      postal_code: pi.metadata?.billing_postal_code || "",
       country: pi.metadata?.billing_country || "",
     };
+    // $set with dot notation (not a full `meta` replace) so `meta.title`/
+    // `meta.image`, already set at creation time in createProductPaymentIntent,
+    // survive this update instead of being wiped out.
     const payment = await Payment.findOneAndUpdate(
       { stripePaymentIntentId: paymentIntentId },
       {
-        status,
-        meta: {
-          ...(pi.metadata || {}),
-          billingAddress,
+        $set: {
+          status,
+          "meta.customer": {
+            name: pi.metadata?.customer_name || "",
+            email: pi.metadata?.customer_email || "",
+          },
+          "meta.billingAddress": billingAddress,
+          ...(status === "succeeded" ? { paidAt: new Date() } : {}),
         },
-        paidAt: status === "succeeded" ? new Date() : undefined,
       },
       { new: true }
     );
 
-    // Best-effort talent-revenue logging — only when the purchased product
-    // is attributed to a talent (Product.talentId, optional). Existing/
-    // legacy products with no talentId simply aren't logged.
     if (status === "succeeded" && pi.metadata?.productId) {
       try {
+        const quantity = Number(pi.metadata.quantity) || 1;
+        // Race-safe: only decrements if enough stock remains at write time;
+        // untracked products (stock: null) never match this filter and are
+        // simply skipped, matching the "null = unlimited" contract.
+        await Product.updateOne(
+          { _id: pi.metadata.productId, stock: { $gte: quantity } },
+          { $inc: { stock: -quantity } }
+        );
+
         const product = await Product.findById(pi.metadata.productId).lean();
+
+        // Best-effort talent-revenue logging — only when the purchased
+        // product is attributed to a talent (Product.talentId, optional).
         if (product?.talentId && payment?.amount) {
           const talent = await Talent.findById(product.talentId).lean();
           if (talent) {
@@ -392,8 +421,18 @@ export const stripeProductWebhookNoSig = async (req, res) => {
             });
           }
         }
+
+        if (pi.metadata.customer_email) {
+          await sendOrderConfirmationEmail(pi.metadata.customer_email, {
+            userName: pi.metadata.customer_name || "there",
+            productTitle: product?.title || "your item",
+            quantity,
+            amount: payment?.amount,
+            shippingAddress: billingAddress,
+          });
+        }
       } catch (err) {
-        console.error("logTalentRevenue (merchandise) failed (non-fatal):", err.message);
+        console.error("Post-payment merch processing failed (non-fatal):", err.message);
       }
     }
   }

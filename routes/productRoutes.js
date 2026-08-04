@@ -30,8 +30,10 @@ router.post(
   auth_token,
   createProductPaymentIntent
 );
-// STRIPE - Create payment intent for product purchase
-router.post("/webhook", auth_key_header, auth_token, stripeProductWebhookNoSig);
+// STRIPE - Webhook (raw body captured earlier in app.js, before
+// express.json() — no auth here, real Stripe calls carry neither
+// secret-key nor a user JWT; signature verification is the auth).
+router.post("/webhook", stripeProductWebhookNoSig);
 
 // READ - Get all products (with pagination and search)
 router.get("/", auth_key_header, getAllProducts);

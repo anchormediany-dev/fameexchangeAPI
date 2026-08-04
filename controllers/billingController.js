@@ -348,6 +348,15 @@ export const stripeWebhook = async (req, res, next) => {
         // Unknown payment or already finalized
         if (!payment) break;
 
+        // This endpoint's remaining logic is event-ticket-specific
+        // (capacity check against payment.eventId, Ticket.create). Other
+        // payment types (product/merch, and session bookings — which
+        // confirm via confirmInverseSessionPayment's own direct Stripe
+        // lookup instead of this webhook) must not fall through into it,
+        // or a merch purchase's succeeded event ends up mistakenly marked
+        // "failed" here for having no matching Event.
+        if (payment.type !== "event") break;
+
         const qty = Number(payment.quantity) || 1;
         const metaAttendees = Array.isArray(payment.meta?.attendees)
           ? payment.meta.attendees
