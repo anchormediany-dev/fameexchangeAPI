@@ -203,6 +203,15 @@ app.get("/health", (req, res) => {
   });
 });
 
+// TEMPORARY — Sentry activation verification, remove after confirming in
+// the dashboard. Not gated behind auth deliberately: this is a one-shot
+// manual check, not a permanent route.
+app.get("/__sentry-test", () => {
+  throw new Error(
+    "Sentry activation test — manual verification, safe to resolve/ignore"
+  );
+});
+
 // 404 Handler
 app.use((req, res, next) => {
   res.status(404).json({ message: "Route not found" });
