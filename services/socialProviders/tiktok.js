@@ -79,13 +79,17 @@ export default {
     let username = null;
     let followers = 0;
     let fetchPending = false;
+    let avatarUrl = null;
 
     try {
       const { data } = await axios.get(
         "https://open.tiktokapis.com/v2/user/info/",
         {
           params: {
-            fields: "open_id,username,display_name,follower_count",
+            // avatar_large_url is part of user.info.basic (already granted
+            // by SCOPE above) — unlike follower_count it needs no separate
+            // review, so this resolves even while followers stays pending.
+            fields: "open_id,username,display_name,follower_count,avatar_large_url",
           },
           headers: { Authorization: `Bearer ${accessToken}` },
         }
@@ -94,6 +98,7 @@ export default {
       providerUserId = u?.open_id || null;
       username = u?.username || u?.display_name || null;
       followers = Number(u?.follower_count || 0);
+      avatarUrl = u?.avatar_large_url || null;
       // TikTok returns 200 with an `error.code` field rather than an HTTP
       // error status when a scope wasn't granted/approved yet.
       if (data?.error && data.error.code !== "ok") {
@@ -112,6 +117,7 @@ export default {
       providerUserId,
       username,
       profileUrl: username ? `https://www.tiktok.com/@${username}` : null,
+      avatarUrl,
       followers,
       fetchPending,
     };

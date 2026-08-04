@@ -794,11 +794,13 @@ export const getFeaturedTalent = async (req, res) => {
         : [],
     ]);
 
-    // Best-available avatar for the "no highlight reel yet" fallback —
-    // YouTube is the only platform with a real fetched avatar today (see
-    // models/socialConnection.js), so it's the only one that can ever
-    // populate this. Stays null (falls through to talent.image on the
-    // frontend) for every other connection state.
+    // Best-available avatar for the "no highlight reel yet" fallback.
+    // YouTube/Twitter/Instagram/TikTok can all populate avatarUrl (see
+    // each provider in services/socialProviders/) — YouTube preferred
+    // since it's the only one with real credentials configured in
+    // production today, any connected platform's avatar as fallback.
+    // Stays null (falls through to talent.image on the frontend) if
+    // nothing is connected/populated yet.
     const socialAvatar =
       socialConnections.find((c) => c.platform === "youtube" && c.avatarUrl)?.avatarUrl ||
       socialConnections.find((c) => c.avatarUrl)?.avatarUrl ||

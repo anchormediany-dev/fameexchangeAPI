@@ -74,16 +74,25 @@ export default {
     let username = null;
     let followers = 0;
     let fetchPending = false;
+    let avatarUrl = null;
 
     try {
       const { data } = await axios.get("https://api.twitter.com/2/users/me", {
-        params: { "user.fields": "public_metrics,username,name" },
+        // profile_image_url is basic profile data (free tier, same as
+        // username/name) — unlike public_metrics it needs no elevated
+        // access, so this part works even while followers stays pending.
+        params: { "user.fields": "public_metrics,username,name,profile_image_url" },
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       const u = data?.data;
       providerUserId = u?.id || null;
       username = u?.username || null;
       followers = Number(u?.public_metrics?.followers_count || 0);
+      // Twitter serves a low-res "_normal" variant by default — swap for
+      // the full-size original image.
+      avatarUrl = u?.profile_image_url
+        ? u.profile_image_url.replace("_normal", "")
+        : null;
     } catch (err) {
       // 403 = endpoint/metrics not available on current API tier.
       const status = err?.response?.status;
@@ -98,6 +107,7 @@ export default {
       providerUserId,
       username,
       profileUrl: username ? `https://x.com/${username}` : null,
+      avatarUrl,
       followers,
       fetchPending,
     };

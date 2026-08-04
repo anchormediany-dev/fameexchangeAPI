@@ -68,6 +68,7 @@ export default {
     let username = null;
     let followers = 0;
     let fetchPending = false;
+    let avatarUrl = null;
 
     try {
       // 1) Pages the user manages
@@ -103,16 +104,17 @@ export default {
         };
       }
 
-      // 3) Followers + username
+      // 3) Followers + username + avatar
       const ig = await axios.get(`${GRAPH}/${igId}`, {
         params: {
-          fields: "username,followers_count",
+          fields: "username,followers_count,profile_picture_url",
           access_token: accessToken,
         },
       });
       providerUserId = igId;
       username = ig?.data?.username || null;
       followers = Number(ig?.data?.followers_count || 0);
+      avatarUrl = ig?.data?.profile_picture_url || null;
     } catch (err) {
       const status = err?.response?.status;
       // Permission / review / non-business-account issues -> pending, not fatal.
@@ -127,6 +129,7 @@ export default {
       providerUserId,
       username,
       profileUrl: username ? `https://instagram.com/${username}` : null,
+      avatarUrl,
       followers,
       fetchPending,
     };
