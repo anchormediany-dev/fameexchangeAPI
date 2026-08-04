@@ -2,6 +2,7 @@ import express from "express";
 import auth_key_header from "../middleware/auth_key_header.js";
 import auth_admin from "../middleware/auth_admin.js";
 import uploadProfile from "../utils/profile_images.js";
+import uploadVideo from "../utils/multer_video_upload.js";
 import {
   createTalent,
   updateTalent,
@@ -12,6 +13,11 @@ import {
   previewFameScore,
   recalculateValuation,
   recalculateAllValuations,
+  setSpotlightFeatured,
+  clearSpotlightFeatured,
+  uploadHighlightReel,
+  getFuturesQualificationProgress,
+  getSpotlightCandidates,
 } from "../controllers/talentController.js";
 import { listLedgerEntries, verifyLedger } from "../controllers/ledgerController.js";
 import { grantBrandAmbassadorBonus } from "../controllers/vestingController.js";
@@ -49,6 +55,37 @@ router.put(
   auth_key_header,
   auth_admin,
   updateTalentFeatured
+);
+router.put(
+  "/talents/:id/spotlight",
+  auth_key_header,
+  auth_admin,
+  setSpotlightFeatured
+);
+router.put(
+  "/talents/:id/unspotlight",
+  auth_key_header,
+  auth_admin,
+  clearSpotlightFeatured
+);
+router.post(
+  "/talents/:id/highlight-reel",
+  auth_key_header,
+  auth_admin,
+  uploadVideo.single("video"),
+  uploadHighlightReel
+);
+router.get(
+  "/talents/futures-progress",
+  auth_key_header,
+  auth_admin,
+  getFuturesQualificationProgress
+);
+router.get(
+  "/talents/spotlight-candidates",
+  auth_key_header,
+  auth_admin,
+  getSpotlightCandidates
 );
 router.get("/market/logs", auth_key_header, auth_admin, getMarketLogs);
 router.get("/ledger", auth_key_header, auth_admin, listLedgerEntries);

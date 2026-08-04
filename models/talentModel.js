@@ -56,6 +56,15 @@ const talentSchema = new mongoose.Schema(
     inverse_order: { type: Number, default: 0 },
     priority: { type: Number, default: 0 },
 
+    // Admin-curated single-talent spotlight (home page "Featured Talent"
+    // section + full bio page) — distinct from featured_in_inverse above.
+    // Only one talent should have this true at a time; enforced in
+    // controllers/talentController.js's setSpotlightFeatured, not at the
+    // schema level.
+    is_featured_spotlight: { type: Boolean, default: false, index: true },
+    highlight_reel_url: { type: String, default: null },
+    highlight_reel_thumbnail_url: { type: String, default: null },
+
     // ── Proprietary FameScore valuation ──────────────────────────────
     // When true, scheduled/triggered valuation recalculation is allowed to
     // nudge current_price toward the FameScore-derived fundamental value.

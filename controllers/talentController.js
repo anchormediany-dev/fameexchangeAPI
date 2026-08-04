@@ -17,6 +17,7 @@ import { initializeVestingAndEarnings } from "../services/vestingService.js";
 import { recordRevenueEvent } from "../services/revenueTrackerService.js";
 import { calculateListingFee } from "../config/feeConfig.js";
 import { isKycVerified } from "../config/kycConfig.js";
+import { QUALIFICATION_THRESHOLDS, SINGLE_PLATFORM_QUALIFICATION } from "../config/famescoreConfig.js";
 import { createTalentSchema, updateTalentSchema, adjustPriceSchema } from "../validators/trading.js";
 import mongoose from "mongoose";
 
@@ -694,6 +695,213 @@ export const getInverseFeaturedTalents = async (req, res) => {
     });
   } catch (err) {
     console.error("getInverseFeaturedTalents error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── Featured Talent spotlight (single talent, distinct from featured_in_inverse) ──
+
+// PUT /api/admin/talents/:id/spotlight
+// Sets this talent as the single featured spotlight, clearing whichever
+// talent previously held it — only one talent should have
+// is_featured_spotlight true at a time.
+export const setSpotlightFeatured = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const talent = await Talent.findById(id);
+    if (!talent) {
+      return res.status(404).json({ success: false, message: "Talent not found" });
+    }
+    await Talent.updateMany(
+      { _id: { $ne: id }, is_featured_spotlight: true },
+      { $set: { is_featured_spotlight: false } }
+    );
+    talent.is_featured_spotlight = true;
+    await talent.save();
+    return res.json({ success: true, data: talent.toDisplay() });
+  } catch (err) {
+    console.error("setSpotlightFeatured error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PUT /api/admin/talents/:id/unspotlight
+export const clearSpotlightFeatured = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const talent = await Talent.findByIdAndUpdate(
+      id,
+      { is_featured_spotlight: false },
+      { new: true }
+    );
+    if (!talent) {
+      return res.status(404).json({ success: false, message: "Talent not found" });
+    }
+    return res.json({ success: true, data: talent.toDisplay() });
+  } catch (err) {
+    console.error("clearSpotlightFeatured error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/admin/talents/:id/highlight-reel (multipart, field name "video")
+export const uploadHighlightReel = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No video file provided" });
+    }
+    const talent = await Talent.findById(id);
+    if (!talent) {
+      return res.status(404).json({ success: false, message: "Talent not found" });
+    }
+    talent.highlight_reel_url = req.file.location;
+    await talent.save();
+    return res.json({ success: true, data: talent.toDisplay() });
+  } catch (err) {
+    console.error("uploadHighlightReel error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/talents/featured (public)
+// Returns the current spotlight talent merged with the public-safe fields
+// of the User they're linked to (name/social_* — see models/user.js;
+// getTalentOverview's "profile" shape is the same convention, reused here
+// so the frontend's existing TalentLinks.jsx component works unmodified).
+export const getFeaturedTalent = async (req, res) => {
+  try {
+    const talent = await Talent.findOne({
+      is_featured_spotlight: true,
+      status: "active",
+    }).lean();
+    if (!talent) {
+      return res.json({ success: true, data: null });
+    }
+    const user = talent.userId
+      ? await User.findById(talent.userId)
+          .select(
+            "name full_name images social_youtube social_twitter social_tiktok social_facebook social_insta social_snap"
+          )
+          .lean()
+      : null;
+
+    const display = Talent.hydrate ? Talent.hydrate(talent).toDisplay() : talent;
+    return res.json({
+      success: true,
+      data: {
+        ...display,
+        profile: user || {},
+      },
+    });
+  } catch (err) {
+    console.error("getFeaturedTalent error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admin/talents/futures-progress (admin)
+// Heuristic 0-100% "how close to qualifying" score per futures-tier
+// talent, to help an admin pick who to spotlight — NOT a precise
+// countdown, the underlying qualification gate (config/famescoreConfig.js)
+// is a hard multi-factor pass/fail, not a smooth function. Takes the
+// better of the two qualification paths (multi-platform vs single-platform
+// dominance), each expressed as an average of capped ratios against that
+// path's thresholds.
+export const getFuturesQualificationProgress = async (req, res) => {
+  try {
+    const futuresTalents = await Talent.find({ tier: "futures", status: "active" })
+      .select("_id name userId fame_score")
+      .lean();
+
+    const results = await Promise.all(
+      futuresTalents.map(async (t) => {
+        try {
+          const preview = await previewValuation(t.userId);
+          const breakdown = preview.breakdown || [];
+          const totalFollowers = breakdown.reduce((s, p) => s + (p.followers || 0), 0);
+          const avgEngagementRate =
+            totalFollowers > 0
+              ? breakdown.reduce((s, p) => s + (p.engagementRate || 0) * (p.followers || 0), 0) /
+                totalFollowers
+              : 0;
+          const platformCount = breakdown.length;
+
+          const multiProgress =
+            (Math.min(1, totalFollowers / QUALIFICATION_THRESHOLDS.minTotalFollowers) +
+              Math.min(1, avgEngagementRate / QUALIFICATION_THRESHOLDS.minEngagementRate) +
+              Math.min(1, platformCount / QUALIFICATION_THRESHOLDS.minPlatforms)) /
+            3;
+
+          const singleProgress = breakdown.length
+            ? Math.max(
+                ...breakdown.map(
+                  (p) =>
+                    (Math.min(1, (p.followers || 0) / SINGLE_PLATFORM_QUALIFICATION.minFollowers) +
+                      Math.min(
+                        1,
+                        (p.engagementRate || 0) / SINGLE_PLATFORM_QUALIFICATION.minEngagementRate
+                      )) /
+                    2
+                )
+              )
+            : 0;
+
+          return {
+            talent_id: t._id,
+            name: t.name,
+            fame_score: t.fame_score,
+            qualified: preview.qualified,
+            qualification_reason: preview.qualificationReason,
+            progress_percent: Math.round(Math.max(multiProgress, singleProgress) * 100),
+          };
+        } catch (err) {
+          return {
+            talent_id: t._id,
+            name: t.name,
+            fame_score: t.fame_score,
+            error: err.message,
+            progress_percent: null,
+          };
+        }
+      })
+    );
+
+    results.sort((a, b) => (b.progress_percent ?? -1) - (a.progress_percent ?? -1));
+    return res.json({ success: true, data: results });
+  } catch (err) {
+    console.error("getFuturesQualificationProgress error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// GET /api/admin/talents/spotlight-candidates (admin)
+// Unlike getAllTalents (public, tradeable-only), this lists BOTH tiers —
+// the spotlight picker needs to search across tradeable talents (for
+// "highest performing") and futures talents (for "soon to graduate") in
+// one screen.
+export const getSpotlightCandidates = async (req, res) => {
+  try {
+    const filter = { status: "active" };
+    if (req.query.search) {
+      const escaped = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { name: { $regex: escaped, $options: "i" } },
+        { symbol: { $regex: escaped, $options: "i" } },
+      ];
+    }
+    const talents = await Talent.find(filter)
+      .select("name symbol slug image tier fame_score valuation current_price is_featured_spotlight highlight_reel_url")
+      .sort({ is_featured_spotlight: -1, tier: 1, fame_score: -1 })
+      .limit(200)
+      .lean();
+    return res.json({ success: true, data: talents.map((t) => ({
+      ...t,
+      valuation: t.valuation ? parseFloat(t.valuation.toString()) : null,
+      current_price: t.current_price ? parseFloat(t.current_price.toString()) : null,
+    })) });
+  } catch (err) {
+    console.error("getSpotlightCandidates error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
