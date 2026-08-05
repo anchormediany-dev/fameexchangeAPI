@@ -20,8 +20,36 @@ import FuturesExclusiveContent from "../models/futuresExclusiveContentModel.js";
 import FuturesProject from "../models/futuresProjectModel.js";
 import FuturesCareerRoadmap from "../models/futuresCareerRoadmapModel.js";
 import FuturesDailyPlan from "../models/futuresDailyPlanModel.js";
+import {
+  getMyTalentProfile,
+  getTalentProfile,
+  createMyTalentProfile,
+  updateMyTalentProfile,
+} from "../controllers/futuresTalentProfileController.js";
+import {
+  getMyFanProfile,
+  createMyFanProfile,
+  updateMyFanProfile,
+} from "../controllers/futuresFanProfileController.js";
 
 const router = express.Router();
+
+// Phase 2 — core identity + qualification gate. Bespoke controllers, not the
+// generic CRUD factory: profile creation is gated (talent side) or singular
+// per-user (both sides), neither of which the factory's ownership-scoped
+// list/get/create/update/delete shape fits cleanly.
+//
+// Route order matters here: the literal "/me" routes must be registered
+// BEFORE the "/:userId" param route, or Express would match "me" as a
+// userId instead of hitting the intended handler.
+router.get("/talent-profile/me", auth_key_header, auth_token, getMyTalentProfile);
+router.post("/talent-profile", auth_key_header, auth_token, createMyTalentProfile);
+router.put("/talent-profile/me", auth_key_header, auth_token, updateMyTalentProfile);
+router.get("/talent-profile/:userId", auth_key_header, getTalentProfile); // public
+
+router.get("/fan-profile/me", auth_key_header, auth_token, getMyFanProfile);
+router.post("/fan-profile", auth_key_header, auth_token, createMyFanProfile);
+router.put("/fan-profile/me", auth_key_header, auth_token, updateMyFanProfile);
 
 function mountCrud(path, Model, opts) {
   const h = makeFuturesCrud(Model, opts);
