@@ -42,6 +42,17 @@ const userSchema = new mongoose.Schema(
     otp_expiry: { type: Number, default: null },
     is_verified: { type: Boolean, default: false },
     KYC_Verified: { type: Boolean, default: false },
+
+    // Custodial Solana wallet (services/solanaWalletService.js) — the
+    // backend generates and holds this on the user's behalf, same model a
+    // brokerage uses for "street name" shares, so there's no wallet-connect/
+    // seed-phrase UX. Public address is safe to expose (it's how anyone,
+    // including the user, independently verifies real on-chain holdings on
+    // a block explorer). The private key is NEVER stored raw — only a KMS
+    // envelope-encrypted ciphertext, and select:false so it's never
+    // accidentally included in a normal query result.
+    solanaWalletAddress: { type: String, default: null, index: true },
+    solanaWalletEncryptedKey: { type: String, default: null, select: false },
     is_rep_have: { type: Boolean, default: false },
     rep_type: { type: String },
     // talents: [{ type: String }],

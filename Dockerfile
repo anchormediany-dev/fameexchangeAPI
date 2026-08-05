@@ -60,4 +60,8 @@ EXPOSE 5006
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget -qO- http://localhost:${PORT:-5006}/health || exit 1
 
-CMD ["node", "app.js"]
+# --import tsx registers tsx's ESM loader so app.js (and anything it
+# imports, including services/solana/*.ts) can import TypeScript files
+# directly — no separate compile step for this backend. tsx is a real
+# dependency (not dev-only) specifically so this works in this container.
+CMD ["node", "--import", "tsx", "app.js"]
