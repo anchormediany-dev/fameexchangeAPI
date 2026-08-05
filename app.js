@@ -75,6 +75,15 @@ process.on("uncaughtException", (err) => {
 const ALLOWED_ORIGINS = [
   "https://app.thefameexchange.com",
   "https://famefutures.com",
+  // The Capacitor-wrapped mobile apps (fameexchangeReact/ios, /android) load
+  // the bundled web build from a local origin, not the real domain — iOS
+  // defaults to "capacitor://localhost" (no iosScheme configured), Android
+  // uses "https://localhost" (androidScheme is set to "https"). Without
+  // both allowed here, every API call from either app is silently CORS-blocked
+  // while purely static/bundled UI still renders — which is exactly what
+  // made sections like "Meet the Team" and merchandise look broken in-app.
+  "capacitor://localhost",
+  "https://localhost",
   ...(process.env.NODE_ENV !== "production"
     ? ["http://localhost:5173", "http://localhost:5174"]
     : []),
