@@ -10,6 +10,11 @@ const teamMemberSchema = new mongoose.Schema(
     imageUrl: { type: String, trim: true },
     linkedinUrl: { type: String, trim: true },
     isVisible: { type: Boolean, default: true },
+    // Controls the homepage carousel only — isVisible controls whether a
+    // member appears anywhere at all (including /our-team). Defaults to
+    // false so newly added members land on the full team page only, per
+    // product decision; an admin opts a member into the homepage explicitly.
+    featuredOnHome: { type: Boolean, default: false },
     order: { type: Number, default: 0, index: true },
     addedBy: {
       type: mongoose.Schema.Types.ObjectId,
