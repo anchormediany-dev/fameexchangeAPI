@@ -35,6 +35,7 @@ export const createTeam = async (req, res) => {
       title,
       bio,
       imageUrl,
+      linkedinUrl,
       isVisible = true,
       order = 0,
     } = req.body;
@@ -55,6 +56,7 @@ export const createTeam = async (req, res) => {
       title,
       bio,
       imageUrl: finalImageUrl,
+      linkedinUrl,
       isVisible,
       order,
       addedBy: userId ? userId : "",
@@ -72,7 +74,7 @@ export const updateTeam = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id))
       return res.status(400).json({ success: false, message: "Invalid id" });
 
-    const allowed = ["name", "title", "bio", "imageUrl", "isVisible", "order"];
+    const allowed = ["name", "slug", "title", "bio", "imageUrl", "linkedinUrl", "isVisible", "order"];
     const updates = {};
     for (const k of allowed) if (k in req.body) updates[k] = req.body[k];
 
