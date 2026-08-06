@@ -56,6 +56,7 @@ import futuresHubRoutes from "./routes/futuresHubRoutes.js";
 import futuresBillingRoutes from "./routes/futuresBillingRoutes.js";
 import futuresAdvisorRoutes from "./routes/futuresAdvisorRoutes.js";
 import futuresGamificationRoutes from "./routes/futuresGamificationRoutes.js";
+import futuresContentRoutes from "./routes/futuresContentRoutes.js";
 import famescoreRoutes from "./routes/famescoreRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 import { startFameScoreScheduler } from "./services/famescoreScheduler.js";
@@ -214,6 +215,7 @@ app.use("/api/futures-hub", futuresHubRoutes);
 app.use("/api/futures-hub/billing", futuresBillingRoutes);
 app.use("/api/futures-hub/advisor", futuresAdvisorRoutes);
 app.use("/api/futures-hub/gamification", futuresGamificationRoutes);
+app.use("/api/futures-hub/content", futuresContentRoutes);
 app.use("/api/famescore", famescoreRoutes);
 
 // Legacy fallback only — new uploads go straight to S3 (config/s3Config.js,

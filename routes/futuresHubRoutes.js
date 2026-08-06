@@ -53,21 +53,38 @@ router.get("/fan-profile/me", auth_key_header, auth_token, getMyFanProfile);
 router.post("/fan-profile", auth_key_header, auth_token, createMyFanProfile);
 router.put("/fan-profile/me", auth_key_header, auth_token, updateMyFanProfile);
 
-function mountCrud(path, Model, opts) {
+// verbs lets a mount skip list/get when a bespoke, tier-gated read path
+// replaces them (see futuresContentController.js — the generic factory's
+// scopeFilter can't enforce subscription/membership tier access, and for
+// entities with no ownerField it can't restrict reads at all regardless of
+// publicList, so those reads need to come from the gated endpoint instead).
+function mountCrud(path, Model, opts, verbs = ["list", "get", "create", "update", "remove"]) {
   const h = makeFuturesCrud(Model, opts);
-  router.get(`/${path}`, auth_key_header, auth_token, h.list);
-  router.get(`/${path}/:id`, auth_key_header, auth_token, h.get);
-  router.post(`/${path}`, auth_key_header, auth_token, h.create);
-  router.put(`/${path}/:id`, auth_key_header, auth_token, h.update);
-  router.delete(`/${path}/:id`, auth_key_header, auth_token, h.remove);
+  if (verbs.includes("list")) router.get(`/${path}`, auth_key_header, auth_token, h.list);
+  if (verbs.includes("get")) router.get(`/${path}/:id`, auth_key_header, auth_token, h.get);
+  if (verbs.includes("create")) router.post(`/${path}`, auth_key_header, auth_token, h.create);
+  if (verbs.includes("update")) router.put(`/${path}/:id`, auth_key_header, auth_token, h.update);
+  if (verbs.includes("remove")) router.delete(`/${path}/:id`, auth_key_header, auth_token, h.remove);
 }
 
 mountCrud("collab-requests", FuturesCollabRequest, { ownerField: "talentId", publicList: true });
-mountCrud("video-lessons", FuturesVideoLesson, { publicList: true, adminWriteOnly: true });
+// Reads come from futuresContentController.getVideoLessons (tier-gated by
+// the caller's platform Membership) — no ownerField exists to scope the
+// generic list/get by, so those would otherwise leak every lesson's
+// video_url to any logged-in user regardless of publicList.
+mountCrud(
+  "video-lessons",
+  FuturesVideoLesson,
+  { adminWriteOnly: true },
+  ["create", "update", "remove"]
+);
 mountCrud("xp-rewards", FuturesXPReward, { publicList: true, adminWriteOnly: true });
 mountCrud("expert-invites", FuturesExpertInvite, { ownerField: "talentId" });
 mountCrud("fan-referrals", FuturesFanReferral, { ownerField: "referrerFanId" });
-mountCrud("exclusive-content", FuturesExclusiveContent, { ownerField: "talentId", publicList: true });
+// Fan-facing reads come from futuresContentController.getTalentExclusiveContent
+// (tier-gated by subscription) — no publicList here, so the generic list
+// only returns the talent's own content (for their own management view).
+mountCrud("exclusive-content", FuturesExclusiveContent, { ownerField: "talentId" });
 mountCrud("projects", FuturesProject, { ownerField: "talentId", publicList: true });
 mountCrud("career-roadmap", FuturesCareerRoadmap, { ownerField: "talentId" });
 mountCrud("daily-plans", FuturesDailyPlan, { ownerField: "talentId" });
