@@ -33,6 +33,10 @@ const futuresTalentProfileSchema = new mongoose.Schema(
     xp: { type: Number, default: 0 },
     highlight_media: { type: [String], default: [] },
     messaging_enabled: { type: Boolean, default: false },
+    // Starter-plan members choose 5 bonus AI advisors from the non-free
+    // roster (see services/futuresAdvisorPersonas.js) — meaningless on
+    // Pro/Elite, which unlock all of them automatically.
+    selected_advisors: { type: [String], default: [] },
   },
   { timestamps: true }
 );

@@ -1,9 +1,14 @@
 // Fame Futures Phase 4 — Claude-backed AI advisor chat + career roadmap
-// generation. See services/futuresAdvisorPersonas.js's header for why the
-// persona registry is still empty (needs real data from Base44, not this
-// controller's concern once populated — everything here is generic).
+// generation. Persona roster sourced from Base44's real "Fame Team
+// Explainer" content — see services/futuresAdvisorPersonas.js's header.
 import anthropicClient from "../services/anthropicClient.js";
-import { ADVISOR_PERSONAS, getAdvisor, canAccessAdvisor } from "../services/futuresAdvisorPersonas.js";
+import {
+  ADVISOR_PERSONAS,
+  SELECTABLE_ADVISOR_KEYS,
+  MAX_SELECTED_ADVISORS,
+  getAdvisor,
+  canAccessAdvisor,
+} from "../services/futuresAdvisorPersonas.js";
 import FuturesAdvisorChat from "../models/futuresAdvisorChatModel.js";
 import FuturesCareerRoadmap from "../models/futuresCareerRoadmapModel.js";
 import FuturesTalentProfile from "../models/futuresTalentProfileModel.js";
@@ -21,7 +26,7 @@ function assert(v, msg, code = 400) {
 }
 
 async function requireTalentProfile(userId) {
-  const profile = await FuturesTalentProfile.findOne({ userId }).lean();
+  const profile = await FuturesTalentProfile.findOne({ userId });
   assert(profile, "Create your Fame Futures creator profile first", 403);
   return profile;
 }
@@ -32,22 +37,49 @@ async function getActivePlan(userId) {
 }
 
 // GET /api/futures-hub/advisor — the roster, gated by the caller's own plan
-// (locked advisors are still listed, marked unlocked:false, so the UI can
-// upsell rather than hide them).
+// + selection (locked advisors are still listed, marked unlocked:false, so
+// the UI can upsell/offer selection rather than hide them).
 export const listAdvisors = async (req, res, next) => {
   try {
     assert(req.user?._id, "Unauthorized", 401);
     const plan = await getActivePlan(req.user._id);
+    const talentProfile = await FuturesTalentProfile.findOne({ userId: req.user._id }).lean();
+    const selected = talentProfile?.selected_advisors || [];
+
     const data = Object.entries(ADVISOR_PERSONAS).map(([key, a]) => ({
       key,
       name: a.name,
       title: a.title,
-      minTier: a.minTier,
+      role: a.role,
       free: Boolean(a.free),
-      unlocked: canAccessAdvisor(a, plan),
+      unlocked: canAccessAdvisor(a, key, plan, selected),
     }));
-    res.json({ success: true, data });
+    res.json({ success: true, data, selected_advisors: selected, plan });
   } catch (e) {
+    next(e);
+  }
+};
+
+// POST /api/futures-hub/advisor/select — Starter-plan members choose up to
+// 5 bonus advisors from the non-free roster. Body: { advisorKeys: string[] }
+export const selectAdvisors = async (req, res, next) => {
+  try {
+    assert(req.user?._id, "Unauthorized", 401);
+    const { advisorKeys } = req.body || {};
+    assert(Array.isArray(advisorKeys), "advisorKeys must be an array");
+    assert(advisorKeys.length <= MAX_SELECTED_ADVISORS, `You can choose at most ${MAX_SELECTED_ADVISORS} advisors`);
+    assert(
+      advisorKeys.every((k) => SELECTABLE_ADVISOR_KEYS.includes(k)),
+      "One or more advisor keys are invalid"
+    );
+
+    const talentProfile = await requireTalentProfile(req.user._id);
+    talentProfile.selected_advisors = advisorKeys;
+    await talentProfile.save();
+
+    res.json({ success: true, data: talentProfile.selected_advisors });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ success: false, message: e.message });
     next(e);
   }
 };
@@ -82,7 +114,14 @@ export const sendMessage = async (req, res, next) => {
 
     const talentProfile = await requireTalentProfile(req.user._id);
     const plan = await getActivePlan(req.user._id);
-    assert(canAccessAdvisor(advisor, plan), "Upgrade your membership to unlock this advisor", 403);
+    const selected = talentProfile.selected_advisors || [];
+    assert(
+      canAccessAdvisor(advisor, advisorKey, plan, selected),
+      plan === "starter"
+        ? "Choose this advisor as one of your 5 bonus picks first"
+        : "Upgrade your membership to unlock this advisor",
+      403
+    );
 
     const userMessage = await FuturesAdvisorChat.create({
       talentId: req.user._id,
@@ -133,15 +172,16 @@ export const generateRoadmap = async (req, res, next) => {
     assert(req.user?._id, "Unauthorized", 401);
     const talentProfile = await requireTalentProfile(req.user._id);
 
+    const andre = getAdvisor("career_manager");
     const completion = await anthropicClient.messages.create({
       model: MODEL,
       max_tokens: 1024,
       system:
-        "You are a career-development strategist for content creators on Fame Futures. " +
-        "Given a creator's profile, respond with STRICT JSON only (no prose, no markdown " +
-        'fences), matching this shape exactly: {"current_position": string, ' +
-        '"next_milestone": string, "thirty_day_plan": string[], "ninety_day_vision": string[]}. ' +
-        "Keep each array to 3-5 concrete, specific items.",
+        `${andre.systemPrompt}\n\n` +
+        "Respond with STRICT JSON only (no prose, no markdown fences), matching this shape " +
+        'exactly: {"current_position": string, "next_milestone": string, ' +
+        '"thirty_day_plan": string[], "ninety_day_vision": string[]}. Keep each array to ' +
+        "3-5 concrete, specific items.",
       messages: [
         {
           role: "user",
