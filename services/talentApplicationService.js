@@ -12,11 +12,8 @@ import { calculateListingFee } from "../config/feeConfig.js";
 import { isKycVerified } from "../config/kycConfig.js";
 import { RE_EVALUATION_DAYS } from "../config/famescoreConfig.js";
 import { FRONTEND_PUBLIC_URL } from "../config/socialAuthConfig.js";
-import { createFamefuturesHandoffToken } from "./famefuturesHandoff.js";
 
 const D128 = (v) => mongoose.Types.Decimal128.fromString(String(v));
-
-const FAMEFUTURES_URL = process.env.FAMEFUTURES_PUBLIC_URL || "https://famefutures.com";
 
 function slugify(input) {
   return String(input)
@@ -196,12 +193,9 @@ async function buildResult(talent, user, { alreadyApplied }) {
   } else if (pendingKyc) {
     redirectUrl = `${FRONTEND_PUBLIC_URL}/verify-id`;
   } else {
-    // Best-effort SSO handoff so they land on famefutures.com already
-    // identified — falls back to a plain link if the shared secret isn't
-    // configured yet (famefutures.com is a separate deployment, may not have
-    // rolled out its side of this yet).
-    const handoffToken = createFamefuturesHandoffToken(user, talent);
-    redirectUrl = handoffToken ? `${FAMEFUTURES_URL}/sso?token=${handoffToken}` : FAMEFUTURES_URL;
+    // Fame Futures now lives inside this same app (unified accounts, no
+    // SSO handoff needed) — see the Fame Futures rebuild plan.
+    redirectUrl = `${FRONTEND_PUBLIC_URL}/futures/dashboard`;
   }
 
   if (!alreadyApplied) {
