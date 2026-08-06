@@ -13,6 +13,7 @@ import FuturesAdvisorChat from "../models/futuresAdvisorChatModel.js";
 import FuturesCareerRoadmap from "../models/futuresCareerRoadmapModel.js";
 import FuturesTalentProfile from "../models/futuresTalentProfileModel.js";
 import FuturesMembership from "../models/futuresMembershipModel.js";
+import { getClaudeJson } from "../services/anthropicJsonCompletion.js";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const HISTORY_TURNS = 20; // messages (not pairs) of context sent to Claude
@@ -173,9 +174,7 @@ export const generateRoadmap = async (req, res, next) => {
     const talentProfile = await requireTalentProfile(req.user._id);
 
     const andre = getAdvisor("career_manager");
-    const completion = await anthropicClient.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
+    const parsed = await getClaudeJson({
       system:
         `${andre.systemPrompt}\n\n` +
         "Respond with STRICT JSON only (no prose, no markdown fences), matching this shape " +
@@ -189,19 +188,6 @@ export const generateRoadmap = async (req, res, next) => {
         },
       ],
     });
-
-    const text = completion.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw Object.assign(new Error("Advisor response wasn't valid JSON"), { status: 502 });
-    }
 
     const roadmap = await FuturesCareerRoadmap.findOneAndUpdate(
       { talentId: req.user._id },

@@ -1,4 +1,5 @@
 import FuturesFanProfile from "../models/futuresFanProfileModel.js";
+import { completeReferral } from "./futuresGamificationController.js";
 
 // No qualification gate — any logged-in FameExchange user can become a
 // Fame Futures fan.
@@ -20,13 +21,22 @@ export const createMyFanProfile = async (req, res) => {
     if (existing) {
       return res.status(409).json({ success: false, message: "Profile already exists" });
     }
-    const { display_name, talentId, avatar_url } = req.body;
+    const { display_name, talentId, avatar_url, referredBy } = req.body;
     const created = await FuturesFanProfile.create({
       userId: req.user._id,
       display_name: display_name || req.user.name,
       talentId: talentId || null,
       avatar_url: avatar_url || null,
     });
+
+    if (referredBy) {
+      await completeReferral({
+        referrerFanId: referredBy,
+        referredUserId: req.user._id,
+        talentId: talentId || null,
+      }).catch(() => {}); // best-effort — a bad/missing referral code shouldn't block signup
+    }
+
     res.status(201).json({ success: true, data: created });
   } catch (e) {
     res.status(400).json({ success: false, message: e.message });

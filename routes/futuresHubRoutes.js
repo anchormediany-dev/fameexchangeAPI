@@ -21,6 +21,7 @@ import FuturesProject from "../models/futuresProjectModel.js";
 import FuturesFanMembershipTier from "../models/futuresFanMembershipTierModel.js";
 import FuturesCareerRoadmap from "../models/futuresCareerRoadmapModel.js";
 import FuturesDailyPlan from "../models/futuresDailyPlanModel.js";
+import FuturesMission from "../models/futuresMissionModel.js";
 import {
   getMyTalentProfile,
   getTalentProfile,
@@ -74,5 +75,10 @@ mountCrud("daily-plans", FuturesDailyPlan, { ownerField: "talentId" });
 // delete, publicList so fans can see a talent's tiers to subscribe. Stripe
 // Price creation happens lazily in futuresBillingController, not here.
 mountCrud("fan-tiers", FuturesFanMembershipTier, { ownerField: "talentId", publicList: true });
+// Talent growth missions (Phase 5) — list/get/create/update/delete are
+// plain owner-scoped CRUD; the XP-award side effect on completion lives in
+// futuresGamificationController.completeMission instead (mounted separately
+// at /api/futures-hub/gamification).
+mountCrud("missions", FuturesMission, { ownerField: "talentId" });
 
 export default router;
