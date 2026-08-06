@@ -53,6 +53,7 @@ import walletRoutes from "./routes/walletRoutes.js";
 import adminTradingRoutes from "./routes/adminTradingRoutes.js";
 import futuresRoutes from "./routes/futuresRoutes.js";
 import futuresHubRoutes from "./routes/futuresHubRoutes.js";
+import futuresBillingRoutes from "./routes/futuresBillingRoutes.js";
 import famescoreRoutes from "./routes/famescoreRoutes.js";
 import { createInitialKeyIfNotExists } from "./controllers/keys.js";
 import { startFameScoreScheduler } from "./services/famescoreScheduler.js";
@@ -139,6 +140,13 @@ app.post(
     next();
   }
 );
+app.post(
+  "/api/futures-hub/billing/webhook",
+  express.raw({ type: "application/json" }),
+  (req, _res, next) => {
+    next();
+  }
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -201,6 +209,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/admin", adminTradingRoutes);
 app.use("/api/futures", futuresRoutes);
 app.use("/api/futures-hub", futuresHubRoutes);
+app.use("/api/futures-hub/billing", futuresBillingRoutes);
 app.use("/api/famescore", famescoreRoutes);
 
 // Legacy fallback only — new uploads go straight to S3 (config/s3Config.js,

@@ -18,6 +18,7 @@ import FuturesExpertInvite from "../models/futuresExpertInviteModel.js";
 import FuturesFanReferral from "../models/futuresFanReferralModel.js";
 import FuturesExclusiveContent from "../models/futuresExclusiveContentModel.js";
 import FuturesProject from "../models/futuresProjectModel.js";
+import FuturesFanMembershipTier from "../models/futuresFanMembershipTierModel.js";
 import FuturesCareerRoadmap from "../models/futuresCareerRoadmapModel.js";
 import FuturesDailyPlan from "../models/futuresDailyPlanModel.js";
 import {
@@ -69,5 +70,9 @@ mountCrud("exclusive-content", FuturesExclusiveContent, { ownerField: "talentId"
 mountCrud("projects", FuturesProject, { ownerField: "talentId", publicList: true });
 mountCrud("career-roadmap", FuturesCareerRoadmap, { ownerField: "talentId" });
 mountCrud("daily-plans", FuturesDailyPlan, { ownerField: "talentId" });
+// Talent-authored custom fan tiers (Phase 3) — talent owns create/update/
+// delete, publicList so fans can see a talent's tiers to subscribe. Stripe
+// Price creation happens lazily in futuresBillingController, not here.
+mountCrud("fan-tiers", FuturesFanMembershipTier, { ownerField: "talentId", publicList: true });
 
 export default router;

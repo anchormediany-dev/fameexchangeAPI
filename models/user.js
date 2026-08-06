@@ -53,6 +53,12 @@ const userSchema = new mongoose.Schema(
     // accidentally included in a normal query result.
     solanaWalletAddress: { type: String, default: null, index: true },
     solanaWalletEncryptedKey: { type: String, default: null, select: false },
+
+    // Was previously read/written by billingController.js's ensureStripeCustomer
+    // without being declared here, so Mongoose silently dropped it on every
+    // save (same class of bug as otp_expiry above) — every payment created a
+    // brand-new Stripe customer instead of reusing one. Now it persists.
+    stripeCustomerId: { type: String, default: null, index: true },
     is_rep_have: { type: Boolean, default: false },
     rep_type: { type: String },
     // talents: [{ type: String }],
